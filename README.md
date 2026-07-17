@@ -207,6 +207,20 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
+## ⚠️ IMPORTANT: About Cosmos
+
+**Cosmos is NOT:**
+- Cosmos DB (Azure database)
+- Apache Cosmos
+- Any external technology
+
+**Cosmos IS:**
+A proprietary computational representation language developed by **Solvens Amoris** based on AST, DAG, structural identity, canonicalization, and graph transformation.
+
+⚠️ **Before implementing Cosmos integration**: Study the official Cosmos specification. Do NOT create a new Cosmos-like language. Use the existing implementation and contracts.
+
+---
+
 **Author:** Luis Alberto Burciaga Miker  
 **Organization:** Solvens Amoris  
 **Repository:** https://github.com/SolvensAmoris/solvens-core
