@@ -12,6 +12,24 @@ This document describes the scientific benchmark methodology used to evaluate SO
 
 ---
 
+## ⚠️ IMPORTANT: Mock vs Real Benchmarks
+
+### Current Status: PHASE 2.0 COMPLETE (Mock Mode)
+
+The benchmarks described here are currently in **mock mode**. Results shown are simulations, not real API calls.
+
+### Real Benchmarks: PHASE 2.1 (Planned)
+
+Real benchmarks require:
+1. API keys configured
+2. Calibration phase (50 runs) to validate instrumentation
+3. Cost verification against actual API bills
+4. Full production runs (3000+ runs)
+
+**DO NOT** present mock results as scientific evidence.
+
+---
+
 ## Philosophy
 
 > **Measure, don't assume.**
@@ -21,6 +39,31 @@ We believe in:
 - **Objectivity**: No cherry-picking of favorable metrics
 - **Transparency**: Full data available in JSON/CSV formats
 - **Fairness**: Same conditions for all frameworks
+
+---
+
+## What We Are NOT Measuring
+
+### ❌ Model Intelligence
+
+This benchmark does NOT evaluate:
+- Quality of model responses
+- Reasoning capabilities
+- Knowledge accuracy
+- Creative output quality
+
+### ✅ Orchestration Efficiency
+
+This benchmark DOES evaluate:
+- Framework overhead
+- Latency introduced by orchestration
+- Token efficiency (not calling more than needed)
+- Cost per task
+- Concurrent execution efficiency
+
+> **"This benchmark evaluates orchestration efficiency, not model intelligence."**
+
+All frameworks use the same model (gpt-4o-mini) to isolate framework performance.
 
 ---
 
@@ -166,7 +209,11 @@ Each benchmark run captures:
 
 ## Current Results
 
-### SOLVENS CORE v0.5.1-rc1
+### ⚠️ MOCK RESULTS - NOT SCIENTIFIC EVIDENCE
+
+The following results are from **mock mode** (simulations), not real API calls:
+
+### SOLVENS CORE v0.5.1-rc1 (Mock)
 
 | Task | Mean (ms) | P95 (ms) | Success |
 |------|-----------|----------|---------|
@@ -179,15 +226,29 @@ Each benchmark run captures:
 | Parallel Executor | 50.15 | 50.16 | ✅ |
 | Sequential Workflow | 50.14 | 50.16 | ✅ |
 
-**Note:** Current benchmarks use mock/simulation mode. Real benchmarks with API calls will be conducted in Phase 2.1.
-
-### Summary Statistics
+### Mock Summary Statistics
 
 - **Total Tasks:** 8
 - **Mean Execution Time:** 50.15 ms
 - **Coefficient of Variation:** 0.01%
 - **Consistency:** High
 - **Success Rate:** 100%
+
+**These numbers are for framework validation only. Real benchmarks will produce different values.**
+
+---
+
+## Hypotheses (Not Results)
+
+The following are **research hypotheses**, not guaranteed outcomes:
+
+| Metric | Hypothesis | Status |
+|--------|------------|--------|
+| SOLVENS cost per task | < $0.0025 | 🔬 Testing |
+| SOLVENS P99 latency | < 2500ms | 🔬 Testing |
+| SOLVENS success rate | > 99% | 🔬 Testing |
+| SOLVENS vs LangGraph | Competitive | 🔬 Testing |
+| SOLVENS vs AutoGen | Competitive | 🔬 Testing |
 
 ---
 
@@ -272,13 +333,52 @@ benchmarks/scientific_output/
 
 ---
 
-## Future Work
+## Environment Lock (Required for Reproducibility)
 
-### Phase 2.1: Real API Benchmarks
-- [ ] Integrate with OpenAI API
-- [ ] Integrate with Anthropic API
-- [ ] Measure actual token costs
-- [ ] Include network latency
+For reproducible benchmarks, the following must be fixed:
+
+```yaml
+environment:
+  python_version: "3.12"          # Exact version
+  packages:
+    openai: "1.12.0"              # Pinned versions
+    anthropic: "0.21.0"
+    langgraph: "0.0.20"
+  model: "gpt-4o-mini"             # Exact model
+  temperature: 0                     # Fixed
+  max_tokens: 2048                  # Fixed
+  seed: null                        # Not used for LLM calls
+  
+system:
+  timestamp_utc: "2025-01-17T00:00:00Z"
+  hardware: "standard"               # Consistent hardware tier
+  
+network:
+  region: "us-east-1"              # Same region for all
+```
+
+---
+
+## Benchmark Phases
+
+### Phase 2.0: Mock Validation ✅
+- Framework structure validated
+- Mock results generated
+- **DO NOT use for scientific claims**
+
+### Phase 2.1-A: Calibration (50 runs)
+- [ ] Configure API keys
+- [ ] Run 50 runs per framework
+- [ ] Verify token counting
+- [ ] Verify cost calculation
+- [ ] Manual CSV review
+- [ ] Compare with API bill
+
+### Phase 2.1-B: Full Production (3000 runs)
+- [ ] Run 1000 runs per framework
+- [ ] Generate final reports
+- [ ] Statistical analysis
+- [ ] Publish results
 
 ### Phase 2.2: Framework Comparisons
 - [ ] Benchmark LangGraph
@@ -291,6 +391,22 @@ benchmarks/scientific_output/
 - [ ] High-concurrency tests
 - [ ] Memory leak detection
 - [ ] CPU profiling
+
+---
+
+## GO/NO-GO Criteria
+
+### GO Criteria (Flexible)
+- [ ] Benchmark reproducible
+- [ ] Cost competitive (not necessarily cheapest)
+- [ ] No worse than baselines
+- [ ] Advantages demonstrated where they exist
+
+### NO-GO Criteria
+- [ ] Metrics not reproducible
+- [ ] Unexpected costs (token multiplier bug)
+- [ ] Statistical errors
+- [ ] API errors not handled
 
 ---
 
