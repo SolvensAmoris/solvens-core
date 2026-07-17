@@ -144,10 +144,13 @@ class LlamaForCausalLMAuditor:
         if len(tokens.ids) == 0:
             errors.append("Empty token sequence")
         
-        # Position IDs deben ser consecutivos
-        expected_positions = tuple(range(len(tokens.ids)))
-        if tokens.position_ids != expected_positions:
-            errors.append(f"Position IDs mismatch. Expected {expected_positions}, got {tokens.position_ids}")
+        # Position IDs deben ser consecutivos (desde cualquier offset)
+        if len(tokens.ids) > 1:
+            for i in range(1, len(tokens.ids)):
+                expected = tokens.position_ids[i-1] + 1
+                if tokens.position_ids[i] != expected:
+                    errors.append(f"Position IDs not consecutive at index {i}: {tokens.position_ids[i-1]} -> {tokens.position_ids[i]}")
+                    break
         
         # Vocab IDs deben estar en rango
         max_id = max(tokens.ids) if tokens.ids else 0
@@ -420,14 +423,24 @@ def run_demo():
     if report.errors:
         print(f"  Errors: {report.errors}")
     
-    # Test 2: Decode
-    print(f"\n[TEST 2: DECODE 1 TOKEN]")
-    tokens = TokenSequence(ids=(229,), position_ids=(128,))
+    # Test 2: Decode (continuación desde 128)
+    print(f"\n[TEST 2: DECODE 1 TOKEN (continuación)]")
+    tokens = TokenSequence(ids=(229,), position_ids=(128,))  # Continúa desde donde quedó
     output = simulator.forward(tokens)
     report = auditor.audit_forward_pass(tokens, output)
     
     print(f"  Overall valid: {report.overall_valid}")
+    print(f"  Tokens: {report.token_sequence_valid}")
     print(f"  Metrics: {report.metrics}")
+    
+    # Test 2b: Decode desde 0 (inicialización)
+    print(f"\n[TEST 2b: DECODE 1 TOKEN (inicial)]")
+    tokens = TokenSequence(ids=(101,), position_ids=(0,))  # Desde 0
+    output = simulator.forward(tokens)
+    report = auditor.audit_forward_pass(tokens, output)
+    
+    print(f"  Overall valid: {report.overall_valid}")
+    print(f"  Tokens: {report.token_sequence_valid}")
     
     print("\n" + "=" * 60)
     print("✓ LlamaForCausalLM full audit complete")
