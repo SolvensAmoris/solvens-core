@@ -1,0 +1,215 @@
+# Default values for SOLVENS Enterprise
+# High-security defaults for enterprise deployment
+
+replicaCount: 2
+
+image:
+  repository: solvens/core
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# API Server
+api:
+  replicaCount: 2
+  service:
+    type: ClusterIP
+    port: 8000
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    hosts:
+      - host: api.solvens.internal
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: solvens-api-tls
+        hosts:
+          - api.solvens.internal
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2
+      memory: 4Gi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  env:
+    SOLVENS_API_PORT: "8000"
+    SOLVENS_AUDIT_LOG_ENABLED: "true"
+    SOLVENS_PII_REDACTION_STRICT: "true"
+    SOLVENS_STORAGE_SSL: "true"
+
+# Dashboard
+dashboard:
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 3000
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    hosts:
+      - host: dashboard.solvens.internal
+        paths:
+          - path: /
+            pathType: Prefix
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# PostgreSQL
+postgresql:
+  enabled: true
+  auth:
+    database: solvens
+    username: solvens
+    password: ""  # Use secret
+  primary:
+    persistence:
+      size: 50Gi
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 1
+        memory: 2Gi
+  securityContext:
+    enabled: true
+    runAsUser: 1000
+    fsGroup: 1000
+
+# Redis
+redis:
+  enabled: true
+  auth:
+    enabled: true
+    password: ""  # Use secret
+  master:
+    persistence:
+      size: 10Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+# Ollama (Local LLM)
+ollama:
+  enabled: true
+  service:
+    type: ClusterIP
+    port: 11434
+  persistence:
+    size: 100Gi
+  resources:
+    requests:
+      cpu: 2
+      memory: 8Gi
+    limits:
+      cpu: 4
+      memory: 16Gi
+
+# MinIO
+minio:
+  enabled: true
+  service:
+    type: ClusterIP
+  tls:
+    enabled: true
+  persistence:
+    size: 100Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1
+      memory: 2Gi
+
+# Monitoring
+prometheus:
+  enabled: true
+  server:
+    retention: 30d
+    persistentVolume:
+      size: 50Gi
+
+grafana:
+  enabled: true
+  adminPassword: ""  # Use secret
+  persistence:
+    size: 10Gi
+
+# Security
+podSecurityPolicy:
+  enabled: true
+
+networkPolicy:
+  enabled: true
+  # Zero-trust: Only allow necessary traffic
+  allowExternal: false
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: solvens
+  egress:
+    - to:
+        - podSelector: {}
+
+rbac:
+  create: true
+  rules:
+    - apiGroups: [""]
+      resources: ["pods", "services", "configmaps"]
+      verbs: ["get", "list", "watch"]
+
+# Service Account
+serviceAccount:
+  create: true
+  name: solvens
+  annotations:
+    iam.gke.io/gcp-service-account: ""
+
+# Vault Integration (Optional)
+vault:
+  enabled: false
+  address: ""
+  secretPath: "secret/data/solvens"
+
+# Cost Guardrails
+costGuardrails:
+  enabled: true
+  monthlyBudgetPerTeam: 500.00
+  alertThreshold: 0.8  # Alert at 80% budget
+
+# License
+license:
+  key: ""
+  secretName: solvens-license
