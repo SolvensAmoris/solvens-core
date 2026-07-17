@@ -1,0 +1,19 @@
+# Solvens Cosmos - Research Agent Example
+cosmos ResearchAgent {
+    sun CentralOrchestrator
+    
+    planet Researcher {
+        model: claude-3-sonnet
+        connects_to: Coder
+    }
+    
+    planet Coder {
+        model: gpt-4
+        connects_to: Reviewer
+    }
+    
+    planet Reviewer {
+        model: gemini
+    }
+}
+end
