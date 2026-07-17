@@ -1,0 +1,30 @@
+{
+  "name": "solvens",
+  "version": "1.0.0",
+  "description": "SOLVENS - AI Agent Orchestration Platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "lint": "eslint src --ext .ts"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "orchestration",
+    "dag",
+    "workflow",
+    "llm"
+  ],
+  "author": "Luis Alberto Burciaga Miker",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  }
+}

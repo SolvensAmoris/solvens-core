@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "solvens"
+version = "1.0.0"
+description = "SOLVENS - AI Agent Orchestration Platform"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Luis Alberto Burciaga Miker", email = "luis@solvens.amoris"}
+]
+keywords = ["ai", "agents", "orchestration", "dag", "workflow", "llm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "httpx>=0.25.0",
+    "websockets>=12.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "click>=8.1.0",
+    "rich>=13.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+solvens = "solvens.cli:main"
+
+[project.urls]
+Homepage = "https://solvens.amoris"
+Documentation = "https://docs.solvens.amoris"
+Repository = "https://github.com/SolvensAmoris/solvens-core"
+Hub = "https://hub.solvens.ai"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["solvens*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
