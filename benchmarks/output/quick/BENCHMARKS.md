@@ -1,6 +1,6 @@
 # SOLVENS CORE - Benchmark Report
 
-**Generated:** 2026-07-17T21:13:27.837563
+**Generated:** 2026-07-17T21:14:49.492471
 **Experiment:** quick-benchmark
 **Version:** 1.0.0
 
@@ -26,7 +26,7 @@ total_memory_gb: 15.615692138671875
 
 | Framework | Runs | Avg Duration (ms) | Avg Tokens | Avg Cost | Avg Memory (MB) |
 |-----------|------|------------------|-----------|---------|-----------------|
-| solvens-core | 3 | 402.22 | 2464 | $0.000000 | 0.06 |
+| solvens-core | 3 | 402.39 | 2464 | $0.000000 | 0.06 |
 
 ## Statistical Analysis
 
@@ -34,7 +34,7 @@ total_memory_gb: 15.615692138671875
 
 | Metric | Mean | Median | Std Dev | P95 | Min | Max |
 |--------|------|--------|---------|-----|-----|-----|
-| Duration (ms) | 402.22 | 402.20 | 0.06 | 402.28 | 402.18 | 402.29 |
+| Duration (ms) | 402.39 | 402.38 | 0.03 | 402.42 | 402.37 | 402.42 |
 | Tokens | 2464.00 | 2464.00 | 0.00 | 2464.00 | 2464.00 | 2464.00 |
 | Memory (MB) | 0.06 | 0.06 | 0.00 | 0.06 | 0.05 | 0.06 |
 
@@ -52,7 +52,7 @@ total_memory_gb: 15.615692138671875
 
 Based on the measured data:
 
-- Highest single run duration: 402.29ms (solvens-core)
+- Highest single run duration: 402.42ms (solvens-core)
 - Peak memory usage observed: 0.06MB
 
 ### Optimization Opportunities

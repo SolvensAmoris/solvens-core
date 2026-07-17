@@ -434,7 +434,9 @@ class CapabilityRouter(BaseService[ProviderRegistry]):
             model=model.id if model else "unknown",
         )
         
-        # TODO: Implement actual provider calls
+        # TODO (legacy): Implement actual provider calls
+        # Note: This is the legacy solvens/router/. 
+        # Active implementation uses cosmos/providers/
         return f"Response from {provider_type.value}"
 
     def _log_routing(

@@ -4,6 +4,56 @@ All notable changes to SOLVENS CORE will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.5.0-rc1] - 2025-01-17 - "Architectural Consolidation"
+
+### Added
+
+- **New Benchmark System** (`benchmarks/`)
+  - Reproducible benchmark configuration
+  - Statistical analysis (mean, median, std, percentiles)
+  - Multiple output formats (JSON, CSV, Markdown)
+  - Impartial analysis reports
+
+- **Architecture Documentation** (`docs/ARCHITECTURE.md`)
+  - Complete system overview
+  - Package structure
+  - Data flow diagrams
+  - Interface definitions
+
+### Changed
+
+- **Phase 1.5: Architectural Consolidation**
+  - Migrated `visualizer/` from `solvens/cosmos/` to `cosmos/`
+  - Migrated `canonicalizer.py` to `cosmos/`
+  - Migrated `moat/` to `cosmos/`
+  - `cosmos/` is now the sole source of truth
+
+### Fixed
+
+- Fixed Cosmos Parser syntax issues (block syntax `{...}`)
+- Fixed `datetime.utcnow()` deprecation (Python 3.12+)
+- Fixed RBAC security: generates random secret if `SOLVENS_SECRET_KEY` not set
+- Fixed import errors in `web_preview.py`
+- Fixed `moat/__init__.py` exports
+
+### Removed
+
+- Deleted `solvens/cosmos/canonicalizer.py.backup` (unused backup)
+- Deleted `solvens/cosmos/canonicalizer_production.py` (unused code)
+
+### Documentation
+
+- Updated `ARCHITECTURE.md` with new diagrams
+- Added `benchmarks/EXPERIMENTAL_BENCHMARKS.md`
+- Added `benchmarks/README.md`
+
+### Security
+
+- RBAC secret key validation
+- No default secrets in production
+
+---
+
 ## [1.0.0] - 2025-01-17
 
 ### Added
