@@ -68,6 +68,10 @@ solvens = "solvens.cli.main:app"
 
 [project.entry-points."solvens.agents"]
 cosmos = "cosmos.solvens_agent:CosmosCompilerAgent"
+explainer = "cosmos.explainer:LLMExplainerAgent"
+
+[project.scripts]
+cosmos = "cosmos.cli:main"
 
 [build-system]
 requires = ["hatchling"]

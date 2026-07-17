@@ -1,0 +1,41 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Cosmos DSL",
+  "scopeName": "source.cosmos",
+  "patterns": [
+    {
+      "name": "comment.line.cosmos",
+      "match": "#.*$"
+    },
+    {
+      "name": "keyword.control.cosmos",
+      "match": "\\b(cosmos|end|if|then|else)\\b"
+    },
+    {
+      "name": "entity.name.type.cosmos",
+      "match": "\\b(sun|planet|galaxy|light|star)\\b"
+    },
+    {
+      "name": "variable.other.cosmos",
+      "match": "\\b(model|connects_to|from|to|duration|start_after|end_before)\\b"
+    },
+    {
+      "name": "string.quoted.cosmos",
+      "match": "\"[^\"]*\""
+    },
+    {
+      "name": "constant.numeric.cosmos",
+      "match": "\\b\\d+\\b"
+    },
+    {
+      "name": "punctuation.brackets.cosmos",
+      "match": "[{}()\\[\\]]"
+    },
+    {
+      "name": "punctuation.operator.cosmos",
+      "match": "[:=,]"
+    }
+  ],
+  "repository": {},
+  "fileTypes": ["cosmos"]
+}

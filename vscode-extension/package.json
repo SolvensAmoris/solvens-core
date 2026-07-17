@@ -1,0 +1,41 @@
+{
+  "name": "cosmos-dsl",
+  "displayName": "Cosmos DSL",
+  "description": "Cosmos DSL - AI Agent Workflow Language with DAG support",
+  "version": "0.4.5-rc1",
+  "publisher": "solvens-amoris",
+  "author": {
+    "name": "Luis Alberto Burciaga Miker",
+    "email": "luis@solvens.amoris"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SolvensAmoris/solvens-core"
+  },
+  "keywords": ["cosmos", "dsl", "dag", "ai", "agents", "workflow"],
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:cosmos", "workspaceContains:**/*.cosmos"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [{
+      "id": "cosmos",
+      "aliases": ["Cosmos", "cosmos"],
+      "extensions": [".cosmos"],
+      "configuration": "./cosmos-configuration.json"
+    }],
+    "grammars": [{
+      "language": "cosmos",
+      "scopeName": "source.cosmos",
+      "path": "./syntaxes/cosmos.tmLanguage.json"
+    }],
+    "commands": [
+      {"command": "cosmos.validate", "title": "Cosmos: Validate File", "category": "Cosmos"},
+      {"command": "cosmos.compile", "title": "Cosmos: Compile to DAG", "category": "Cosmos"},
+      {"command": "cosmos.explain", "title": "Cosmos: Explain Error", "category": "Cosmos"}
+    ]
+  }
+}
