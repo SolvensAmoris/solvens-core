@@ -1,0 +1,9 @@
+framework,task_type,task_name,task_hash,model,iterations,timestamp,mean_ms,median_ms,std_dev_ms,min_ms,max_ms,p50_ms,p95_ms,p99_ms,total_duration_ms,success,output_length,python_version,platform
+solvens,code_generation,Code Generation,dd420022227e,gpt-4o-mini,10,2026-07-17T21:44:38.516002,50.15,50.15,0.01,50.14,50.17,50.15,50.17,50.17,501.55,True,34,3.13.14,linux
+solvens,data_analysis,Data Analysis,7af14f551ef0,gpt-4o-mini,10,2026-07-17T21:44:39.118391,50.16,50.16,0.01,50.15,50.17,50.16,50.17,50.17,501.59,True,32,3.13.14,linux
+solvens,research_synthesis,Research Synthesis,61436f951555,gpt-4o-mini,10,2026-07-17T21:44:39.720648,50.14,50.14,0.01,50.13,50.15,50.14,50.15,50.15,501.41,True,37,3.13.14,linux
+solvens,text_summarization,Text Summarization,f92a7aebad70,gpt-4o-mini,10,2026-07-17T21:44:40.322969,50.15,50.15,0.02,50.13,50.17,50.15,50.17,50.17,501.52,True,37,3.13.14,linux
+solvens,question_answering,Question Answering,1ee962697e3a,gpt-4o-mini,10,2026-07-17T21:44:40.925243,50.14,50.14,0.01,50.12,50.17,50.15,50.17,50.17,501.44,True,37,3.13.14,linux
+solvens,agent_coordination,Agent Coordination,114cd4a39cc3,gpt-4o-mini,10,2026-07-17T21:44:41.527489,50.14,50.14,0.01,50.13,50.17,50.14,50.17,50.17,501.43,True,37,3.13.14,linux
+solvens,parallel_executor,Parallel Executor,7bee6dedb29e,gpt-4o-mini,10,2026-07-17T21:44:42.129783,50.15,50.14,0.01,50.14,50.16,50.15,50.16,50.16,501.45,True,36,3.13.14,linux
+solvens,sequential_workflow,Sequential Workflow,969c4783f33a,gpt-4o-mini,10,2026-07-17T21:44:42.731978,50.14,50.14,0.01,50.13,50.16,50.14,50.16,50.16,501.42,True,38,3.13.14,linux

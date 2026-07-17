@@ -1,171 +1,317 @@
-# Cosmos Benchmarks
+# SOLVENS CORE - Scientific Benchmarks
 
-Verifiable performance benchmarks for Cosmos Compiler.
-
-## Reproduce Results
-
-Anyone can verify these benchmarks by running:
-
-```bash
-git clone https://github.com/SolvensAmoris/solvens-core
-cd solvens-core
-pip install numpy
-python benchmarks/run_benchmark.py
-```
-
-## Strassen Matrix Multiplication
-
-### What is it?
-
-Strassen's algorithm reduces matrix multiplication complexity from O(n³) to O(n²·⁸⁰⁷).
-
-### Implementation
-
-The implementation is **real Strassen**, not disguised NumPy:
-
-- Source: [`cosmos/compiler/strassen.py`](https://github.com/SolvensAmoris/solvens-core/blob/main/cosmos/compiler/strassen.py)
-- Uses actual divide-and-conquer with 7 recursive multiplications
-- Verified against NumPy's BLAS implementation
-
-### Verification
-
-Every benchmark run validates correctness:
-
-```python
-correct = np.allclose(C_np, C_strassen, rtol=1e-10, atol=1e-10)
-```
-
-### Expected Results
-
-| Size | NumPy dot | Cosmos Strassen | Speedup | Correct? |
-|------|-----------|-----------------|---------|----------|
-| 64x64 | ~0.1ms | ~0.2ms | 0.5x | ✓ |
-| 128x128 | ~0.8ms | ~1.5ms | 0.5x | ✓ |
-| 256x256 | ~6ms | ~12ms | 0.5x | ✓ |
-
-**Note:** Strassen is slower than NumPy for small/medium matrices because:
-1. NumPy uses highly-optimized BLAS libraries (OpenBLAS, MKL)
-2. Strassen has recursion overhead
-3. Cache effects favor standard multiplication for n < 512
-
-Strassen wins theoretically but NumPy wins practically. This is expected.
-
-## FFT (Fast Fourier Transform)
-
-### What is it?
-
-Cooley-Tukey iterative FFT with O(n log n) complexity.
-
-### Implementation
-
-Source: [`cosmos/compiler/fft.py`](https://github.com/SolvensAmoris/solvens-core/blob/main/cosmos/compiler/fft.py)
-
-### Verification
-
-```python
-correct = np.allclose(X_np, X_cosmos, rtol=1e-10, atol=1e-10)
-```
-
-## Running Individual Benchmarks
-
-```bash
-# Strassen only
-python -c "from cosmos.compiler.strassen import verify_strassen; print(verify_strassen(128))"
-
-# FFT only
-python -c "from cosmos.compiler.fft import verify_fft; print(verify_fft(1024))"
-```
-
-## Why These Benchmarks?
-
-1. **Transparency:** Full source code available
-2. **Reproducibility:** Fixed random seeds
-3. **Verification:** Every run validates correctness
-4. **Fairness:** Compare against industry-standard NumPy
-
-## GitHub Actions
-
-Benchmarks run on every PR to ensure no regressions.
+**Version:** 1.0.0  
+**Author:** Luis Alberto Burciaga Miker  
+**Date:** 2025-01-17
 
 ---
 
-## ARM64 Android - Kirin 980 Verified
+## Overview
 
-### Setup
-
-```bash
-pkg install python numpy
-pip install cosmos-compiler
-```
-
-### Test Strassen 512x512
-
-```python
-import numpy as np
-import cosmos
-
-A = np.random.rand(512, 512)
-B = np.random.rand(512, 512)
-
-C_cosmos = cosmos.matmul(A, B)  # Strassen
-C_numpy = np.matmul(A, B)
-
-diff = np.linalg.norm(C_cosmos - C_numpy)
-print(f"Diff: {diff}")  # Esperado: 4.14e-12
-```
-
-### Resultado Verificado
-
-| Spec | Value |
-|------|-------|
-| **Device** | Huawei Nova 5T |
-| **SoC** | Kirin 980 (ARM64) |
-| **RAM** | 6GB |
-| **OS** | Android 10 |
-| **Test** | 512x512 Strassen matrix multiply |
-| **Diff** | 4.14e-12 |
-| **Status** | ✓ PASS |
-| **Fecha** | Octubre 2026 |
+This document describes the scientific benchmark methodology used to evaluate SOLVENS CORE performance. Benchmarks are designed to be **reproducible**, **objective**, and **comparable** across frameworks.
 
 ---
 
-## Framework Comparison Benchmarks
+## Philosophy
 
-### Run Comparison
+> **Measure, don't assume.**
+
+We believe in:
+- **Reproducibility**: Same task, same configuration, same result
+- **Objectivity**: No cherry-picking of favorable metrics
+- **Transparency**: Full data available in JSON/CSV formats
+- **Fairness**: Same conditions for all frameworks
+
+---
+
+## Benchmark Framework
+
+### Scientific Benchmark System
+
+The benchmark system is located in `benchmarks/scientific.py`:
 
 ```bash
-python benchmarks/cli.py run --compare-all
+# Run SOLVENS benchmarks
+python benchmarks/scientific.py
+
+# Generate visualizations
+python benchmarks/plot_generator.py
 ```
 
-### Results (CRM Generator Workflow)
+### Output Structure
 
-| Framework | Time | Cost | Reuse | Nodes | Memory | Tokens |
-|-----------|------|------|-------|-------|--------|--------|
-| **Solvens** | 3.6ms | $0.0581 | 47%* | 11 | 0MB | 15,950 |
-| LangChain | 420ms | $0.0890 | 0% | N/A | 50MB | 11,200 |
-| AutoGen | 680ms | $0.1245 | 0% | N/A | 80MB | 10,800 |
-| Baseline | 300ms | $0.0200 | 0% | 1 | 0MB | 2,006 |
+```
+benchmarks/scientific_output/
+├── json/
+│   └── results.json          # Raw data
+├── csv/
+│   └── results.csv           # Spreadsheet-ready
+├── plots/
+│   ├── dashboard.png         # Summary visualization
+│   ├── mean_comparison.png   # Mean time comparison
+│   ├── heatmap.png           # Framework x Task heatmap
+│   ├── percentiles.png        # P50/P95/P99 analysis
+│   ├── distribution.png       # Violin plot
+│   ├── boxplot.png           # Box plot
+│   └── success_rate.png      # Success rates
+└── reports/
+    └── BENCHMARKS.md         # This document
+```
 
-*Subgraph reuse: SOLVENS caches identical sub-DAGs, reducing redundant computation.
+---
 
-### Cost Analysis
+## Standardized Tasks
 
-**Per-task breakdown (crm_generator workflow):**
+Benchmarks use 8 standardized tasks:
 
-| Provider | Model | Tasks | Tokens | Cost |
-|---------|-------|-------|--------|------|
-| OpenAI | gpt-4o | 6 | 9,200 | $0.0528 |
-| Anthropic | claude-3.5-sonnet | 4 | 6,000 | $0.0180 |
-| Ollama | llama3 | 1 | 750 | $0.0000 |
+| Task | Description | Complexity | Planning | Memory |
+|------|-------------|------------|----------|--------|
+| Code Generation | Write Python function with requirements | Medium | Yes | No |
+| Data Analysis | Calculate statistics from data | Medium | Yes | No |
+| Research Synthesis | Summarize information from multiple sources | High | No | Yes |
+| Text Summarization | Summarize text in 3 sentences | Low | No | No |
+| Question Answering | Answer based on context | Low | No | No |
+| Agent Coordination | Coordinate multiple agents | High | Yes | No |
+| Parallel Executor | Execute independent tasks in parallel | Low | No | No |
+| Sequential Workflow | Execute tasks with dependencies | Low | Yes | No |
 
-### Workflows Tested
+---
 
-1. **crm_generator**: Generates complete CRM with API, DB, UI
-2. **doc_writer**: Documents codebase with examples and guides  
-3. **audit_flow**: Audits code for security and compliance
+## Metrics Collected
+
+### Timing Metrics
+
+| Metric | Description | Unit |
+|--------|-------------|------|
+| `mean_ms` | Arithmetic mean | ms |
+| `median_ms` | Median (P50) | ms |
+| `std_dev_ms` | Standard deviation | ms |
+| `min_ms` | Minimum | ms |
+| `max_ms` | Maximum | ms |
+| `p50_ms` | 50th percentile | ms |
+| `p95_ms` | 95th percentile | ms |
+| `p99_ms` | 99th percentile | ms |
+| `total_duration_ms` | Total wall time | ms |
+
+### Quality Metrics
+
+| Metric | Description |
+|--------|-------------|
+| `success` | All iterations completed successfully |
+| `output_length` | Average output length in characters |
+
+### System Metrics
+
+| Metric | Description |
+|--------|-------------|
+| `python_version` | Python version |
+| `platform` | Operating system |
+| `peak_memory_mb` | Peak memory usage (if available) |
+| `avg_cpu_percent` | Average CPU usage (if available) |
+
+---
+
+## Statistical Analysis
+
+### Coefficient of Variation (CV)
+
+Measures consistency of results:
+
+```
+CV = (Standard Deviation / Mean) × 100
+```
+
+| CV Range | Interpretation |
+|----------|----------------|
+| < 10% | Highly consistent |
+| 10-25% | Moderate consistency |
+| 25-50% | High variability |
+| > 50% | Very high variability |
+
+### Percentiles
+
+- **P50 (Median)**: 50% of requests complete faster
+- **P95**: 95% of requests complete faster (SLA threshold)
+- **P99**: 99% of requests complete faster (Critical threshold)
+
+---
+
+## Reproducibility
+
+### Configuration
+
+All benchmarks use identical configuration:
+
+```python
+{
+    "model": "gpt-4o-mini",
+    "provider": "openai",
+    "temperature": 0.7,
+    "max_tokens": 2048,
+    "iterations": 10,
+    "warmup_iterations": 2,
+}
+```
+
+### Version Control
+
+Each benchmark run captures:
+- Timestamp
+- Framework version
+- Python version
+- Platform/OS
+- Task hash (for verification)
+
+---
+
+## Current Results
+
+### SOLVENS CORE v0.5.1-rc1
+
+| Task | Mean (ms) | P95 (ms) | Success |
+|------|-----------|----------|---------|
+| Code Generation | 50.15 | 50.17 | ✅ |
+| Data Analysis | 50.16 | 50.17 | ✅ |
+| Research Synthesis | 50.14 | 50.15 | ✅ |
+| Text Summarization | 50.15 | 50.17 | ✅ |
+| Question Answering | 50.14 | 50.17 | ✅ |
+| Agent Coordination | 50.14 | 50.17 | ✅ |
+| Parallel Executor | 50.15 | 50.16 | ✅ |
+| Sequential Workflow | 50.14 | 50.16 | ✅ |
+
+**Note:** Current benchmarks use mock/simulation mode. Real benchmarks with API calls will be conducted in Phase 2.1.
+
+### Summary Statistics
+
+- **Total Tasks:** 8
+- **Mean Execution Time:** 50.15 ms
+- **Coefficient of Variation:** 0.01%
+- **Consistency:** High
+- **Success Rate:** 100%
+
+---
+
+## Visualization Examples
+
+### Generated Plots
+
+1. **Dashboard** (`dashboard.png`) - Summary of all metrics
+2. **Mean Comparison** (`mean_comparison.png`) - Bar chart comparison
+3. **Heatmap** (`heatmap.png`) - Framework × Task matrix
+4. **Percentiles** (`percentiles.png`) - P50/P95/P99 analysis
+5. **Distribution** (`distribution.png`) - Violin plot
+6. **Boxplot** (`boxplot.png`) - Statistical distribution
+7. **Success Rate** (`success_rate.png`) - Success comparison
+
+---
+
+## Comparison Methodology
+
+To compare SOLVENS with other frameworks:
+
+1. **Same Tasks**: Use identical benchmark tasks
+2. **Same Configuration**: Same model, parameters, iterations
+3. **Same Environment**: Consistent system resources
+4. **Same Measurement**: Identical metrics collection
+
+### Frameworks for Comparison
+
+| Framework | Status | Notes |
+|-----------|--------|-------|
+| SOLVENS | ✅ Implemented | Current focus |
+| LangGraph | 🔜 Planned | Next comparison |
+| CrewAI | 🔜 Planned | Future comparison |
+| AutoGen | 🔜 Planned | Future comparison |
+| OpenAI Swarm | 🔜 Planned | Future comparison |
+
+---
+
+## How to Run
+
+### 1. Run Benchmarks
+
+```bash
+# Quick benchmark (3 iterations)
+python benchmarks/scientific.py --iterations 3
+
+# Standard benchmark (10 iterations)
+python benchmarks/scientific.py --iterations 10
+
+# Extended benchmark (30 iterations)
+python benchmarks/scientific.py --iterations 30
+```
+
+### 2. Generate Plots
+
+```bash
+# Generate all plots
+python benchmarks/plot_generator.py
+
+# Custom output directory
+python benchmarks/plot_generator.py --output my_results/plots
+```
+
+### 3. Export Data
+
+```bash
+# Results are automatically saved as:
+benchmarks/scientific_output/
+├── json/results.json    # Full data
+├── csv/results.csv      # Spreadsheet format
+└── plots/              # Visualizations
+```
+
+---
+
+## Limitations
+
+1. **Mock Mode**: Current benchmarks use simulation, not real API calls
+2. **Single Framework**: Only SOLVENS benchmarked so far
+3. **No Network Variance**: Local execution doesn't simulate API latency
+4. **Short Duration**: Long-running benchmarks not yet conducted
+
+---
+
+## Future Work
+
+### Phase 2.1: Real API Benchmarks
+- [ ] Integrate with OpenAI API
+- [ ] Integrate with Anthropic API
+- [ ] Measure actual token costs
+- [ ] Include network latency
+
+### Phase 2.2: Framework Comparisons
+- [ ] Benchmark LangGraph
+- [ ] Benchmark CrewAI
+- [ ] Benchmark AutoGen
+- [ ] Generate comparative reports
+
+### Phase 2.3: Stress Testing
+- [ ] Long-duration benchmarks (hours)
+- [ ] High-concurrency tests
+- [ ] Memory leak detection
+- [ ] CPU profiling
+
+---
+
+## Citation
+
+If you use these benchmarks, please cite:
+
+```
+@misc{solvens2025,
+  title={SOLVENS CORE Scientific Benchmarks},
+  author={Luis Alberto Burciaga Miker},
+  year={2025},
+  howpublished={\url{https://github.com/SolvensAmoris/solvens-core}}
+}
+```
+
+---
 
 ## Contact
 
-Luis Alberto Burciaga Miker  
-luis@solvens.amoris  
-https://github.com/SolvensAmoris/solvens-core
+For questions about methodology or results:
+- **Author:** Luis Alberto Burciaga Miker
+- **Repository:** https://github.com/SolvensAmoris/solvens-core
+- **Issues:** https://github.com/SolvensAmoris/solvens-core/issues
