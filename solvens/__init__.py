@@ -1,68 +1,53 @@
 """
-Solvens Core v0.2 - AI Operating System Kernel
-=============================================
+SOLVENS CORE
 
-El kernel que no pide permiso.
-Agentes que orquestan, routan por plata, ejecutan en Cosmos DAG y facturan solos.
+AI Agent Orchestration Platform.
 
 Usage:
-    from solvens import Runtime, SmartRouter, SelfBillingAgent
+    from solvens import CosmosCompilerAgent, Executor, CostEstimator
     
-    # Launch revenue agent
-    solvens launch revenue
-    
-    # Battle providers
-    solvens battle grok claude
-
-Author: Luis Alberto Burciaga Miker
+    agent = CosmosCompilerAgent()
+    result = agent.compile("workflow.cosmos")
 """
 
-__version__ = "0.2.0"
-__author__ = "Luis Alberto Burciaga Miker"
-__license__ = "MIT"
+__version__ = "1.0.0"
 
-# Core exports
-from solvens.runtime.orchestrator import (
-    RuntimeOrchestrator,
-    Task,
-    TaskPriority,
-    TaskStatus,
-    get_runtime,
-    init_runtime,
-    shutdown_runtime,
-)
+# Core components
+from cosmos.parser.parser import Parser
+from cosmos.parser.lexer import Lexer
+from cosmos.ast import ASTNode, Program, TaskDecl, AgentDecl, ProviderDecl
 
-from solvens.router.smart_router import (
-    SmartRouter,
-    ProviderType,
-    TaskType,
-    get_router,
-)
+# Providers
+try:
+    from cosmos.providers import llm, BaseProvider, ProviderType, Message
+except ImportError:
+    pass
 
-from solvens.plugins.revenue.self_billing_agent import (
-    SelfBillingAgent,
-    AgentConfig,
-    BillingDatabase,
-)
+# Runtime
+try:
+    from cosmos.runtime.cost_safety import (
+        cost_estimator,
+        budget_manager,
+        CostEstimator,
+        BudgetManager,
+        CircuitBreaker,
+    )
+except ImportError:
+    pass
+
+# Security
+try:
+    from cosmos.security.rbac import rbac, Role, Permission
+except ImportError:
+    pass
 
 __all__ = [
-    # Version
     "__version__",
-    # Runtime
-    "RuntimeOrchestrator",
-    "Task",
-    "TaskPriority",
-    "TaskStatus",
-    "get_runtime",
-    "init_runtime",
-    "shutdown_runtime",
-    # Router
-    "SmartRouter",
-    "ProviderType",
-    "TaskType",
-    "get_router",
-    # Billing
-    "SelfBillingAgent",
-    "AgentConfig",
-    "BillingDatabase",
+    "Parser",
+    "Lexer",
+    "ASTNode",
+    "Program",
+    "TaskDecl",
+    "AgentDecl",
+    "ProviderDecl",
 ]

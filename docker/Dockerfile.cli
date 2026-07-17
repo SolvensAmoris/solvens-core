@@ -1,0 +1,15 @@
+# SOLVENS CLI Dockerfile
+# Standalone CLI container
+
+FROM python:3.12-slim
+
+WORKDIR /workspace
+
+# Install dependencies
+RUN pip install --no-cache-dir solvens-core
+
+# Copy demo workflow
+COPY demo/demo.cosmos /workspace/demo.cosmos
+
+# Default command
+CMD ["solvens", "doctor"]

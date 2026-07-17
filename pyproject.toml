@@ -1,7 +1,7 @@
 [project]
-name = "cosmos-compiler"
-version = "0.4.5"
-description = "Cosmos Compiler - AI Agent Workflow DSL with DAG support, E401 fail-fast, LSP, and EXPORT schema"
+name = "solvens-core"
+version = "1.0.0"
+description = "SOLVENS CORE - AI Agent Orchestration Platform with Cosmos DSL, DAG execution, and multi-provider support"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [
