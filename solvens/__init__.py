@@ -1,39 +1,68 @@
-"""SOLVENS CORE - AI Operating System Kernel
+"""
+Solvens Core v0.2 - AI Operating System Kernel
+=============================================
 
-SOLVENS CORE is the modular kernel that powers all applications in the Solvens ecosystem.
-It provides a foundation for building intelligent agents with multi-provider support,
-event-driven architecture, and plugin extensibility.
+El kernel que no pide permiso.
+Agentes que orquestan, routan por plata, ejecutan en Cosmos DAG y facturan solos.
+
+Usage:
+    from solvens import Runtime, SmartRouter, SelfBillingAgent
+    
+    # Launch revenue agent
+    solvens launch revenue
+    
+    # Battle providers
+    solvens battle grok claude
+
+Author: Luis Alberto Burciaga Miker
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __author__ = "Luis Alberto Burciaga Miker"
+__license__ = "MIT"
 
-from solvens.core.base import BaseModel, BaseService
-from solvens.core.config import Settings, get_settings
-from solvens.core.types import (
-    Message,
-    MessageRole,
-    Model,
-    Provider,
+# Core exports
+from solvens.runtime.orchestrator import (
+    RuntimeOrchestrator,
     Task,
     TaskPriority,
     TaskStatus,
+    get_runtime,
+    init_runtime,
+    shutdown_runtime,
+)
+
+from solvens.router.smart_router import (
+    SmartRouter,
+    ProviderType,
+    TaskType,
+    get_router,
+)
+
+from solvens.plugins.revenue.self_billing_agent import (
+    SelfBillingAgent,
+    AgentConfig,
+    BillingDatabase,
 )
 
 __all__ = [
     # Version
     "__version__",
-    # Core
-    "BaseModel",
-    "BaseService",
-    "Settings",
-    "get_settings",
-    # Types
-    "Message",
-    "MessageRole",
-    "Model",
-    "Provider",
+    # Runtime
+    "RuntimeOrchestrator",
     "Task",
     "TaskPriority",
     "TaskStatus",
+    "get_runtime",
+    "init_runtime",
+    "shutdown_runtime",
+    # Router
+    "SmartRouter",
+    "ProviderType",
+    "TaskType",
+    "get_router",
+    # Billing
+    "SelfBillingAgent",
+    "AgentConfig",
+    "BillingDatabase",
 ]
