@@ -1,0 +1,67 @@
+# CRM Generator Workflow
+# Generates a complete CRM system with API, database, and UI
+
+task fetch_requirements {
+    provider = "anthropic"
+    description = "Gather CRM requirements from stakeholders"
+}
+
+task design_database {
+    provider = "anthropic"
+    depends_on = [fetch_requirements]
+    description = "Design database schema for CRM"
+}
+
+task design_api {
+    provider = "anthropic"
+    depends_on = [design_database]
+    description = "Design REST API endpoints"
+}
+
+task design_ui {
+    provider = "openai"
+    depends_on = [design_api]
+    description = "Design UI components"
+}
+
+task implement_database {
+    provider = "openai"
+    depends_on = [design_database]
+    description = "Implement database migrations"
+}
+
+task implement_backend {
+    provider = "openai"
+    depends_on = [design_api, implement_database]
+    description = "Implement backend API"
+}
+
+task implement_frontend {
+    provider = "openai"
+    depends_on = [design_ui, implement_backend]
+    description = "Implement frontend components"
+}
+
+task write_tests {
+    provider = "openai"
+    depends_on = [implement_backend]
+    description = "Write unit and integration tests"
+}
+
+task write_docs {
+    provider = "anthropic"
+    depends_on = [implement_backend, implement_frontend]
+    description = "Write API documentation"
+}
+
+task deploy {
+    provider = "ollama"
+    depends_on = [implement_backend, implement_frontend, write_tests, write_docs]
+    description = "Deploy to production"
+}
+
+task verify {
+    provider = "anthropic"
+    depends_on = [deploy]
+    description = "Verify deployment"
+}

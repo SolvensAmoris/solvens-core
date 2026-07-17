@@ -1,0 +1,49 @@
+# Documentation Writer Workflow
+# Documents a codebase with examples and guides
+
+task scan_repository {
+    provider = "ollama"
+    description = "Scan repository structure"
+}
+
+task read_source_files {
+    provider = "anthropic"
+    depends_on = [scan_repository]
+    description = "Read source code files"
+}
+
+task generate_api_docs {
+    provider = "openai"
+    depends_on = [read_source_files]
+    description = "Generate API documentation"
+}
+
+task generate_examples {
+    provider = "openai"
+    depends_on = [read_source_files]
+    description = "Generate code examples"
+}
+
+task generate_guides {
+    provider = "anthropic"
+    depends_on = [generate_api_docs, generate_examples]
+    description = "Generate user guides"
+}
+
+task generate_readme {
+    provider = "anthropic"
+    depends_on = [generate_guides]
+    description = "Generate README.md"
+}
+
+task build_docs_site {
+    provider = "ollama"
+    depends_on = [generate_api_docs, generate_guides]
+    description = "Build documentation site"
+}
+
+task verify_docs {
+    provider = "anthropic"
+    depends_on = [build_docs_site]
+    description = "Verify documentation builds"
+}

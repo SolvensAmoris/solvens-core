@@ -1,0 +1,54 @@
+# Audit Flow Workflow
+# Audits code for security, quality, and compliance
+
+task scan_codebase {
+    provider = "ollama"
+    description = "Scan codebase for issues"
+}
+
+task analyze_dependencies {
+    provider = "ollama"
+    description = "Analyze dependency versions"
+}
+
+task check_security {
+    provider = "anthropic"
+    depends_on = [scan_codebase]
+    description = "Security vulnerability check"
+}
+
+task check_code_quality {
+    provider = "anthropic"
+    depends_on = [scan_codebase]
+    description = "Code quality analysis"
+}
+
+task check_compliance {
+    provider = "anthropic"
+    depends_on = [scan_codebase]
+    description = "Compliance check"
+}
+
+task analyze_results {
+    provider = "anthropic"
+    depends_on = [check_security, check_code_quality, check_compliance]
+    description = "Analyze audit results"
+}
+
+task generate_report {
+    provider = "openai"
+    depends_on = [analyze_results, analyze_dependencies]
+    description = "Generate audit report"
+}
+
+task generate_recommendations {
+    provider = "anthropic"
+    depends_on = [generate_report]
+    description = "Generate recommendations"
+}
+
+task deliver_report {
+    provider = "openai"
+    depends_on = [generate_report, generate_recommendations]
+    description = "Deliver final report"
+}
