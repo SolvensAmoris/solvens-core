@@ -1,0 +1,170 @@
+# docker-compose.yml
+# ==============
+#
+# Solvens Core v0.4.5-rc1
+# Docker Compose for local development
+#
+# Services:
+#   - solvens-api: FastAPI server
+#   - redis: Redis for caching and pub/sub
+#   - ollama: Local LLM inference server
+#   - postgres: PostgreSQL for persistent storage (optional)
+#
+# Usage:
+#   docker-compose up -d
+#   docker-compose logs -f solvens-api
+#
+# Author: Luis Alberto Burciaga Miker
+# Version: 0.4.5-rc1
+
+version: "3.9"
+
+services:
+  # ============================================================
+  # Solvens API Server
+  # ============================================================
+  solvens-api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: solvens-api
+    ports:
+      - "8000:8000"
+      - "8001:8001"  # Metrics
+    environment:
+      # API
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - LOG_LEVEL=INFO
+      
+      # Redis
+      - REDIS_URL=redis://redis:6379/0
+      
+      # Ollama
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=llama3
+      
+      # Storage
+      - DATABASE_URL=postgresql://solvens:solvens@postgres:5432/solvens
+      
+      # Security
+      - API_KEY=${API_KEY:-solvens-dev-key-change-in-production}
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:8080
+    depends_on:
+      - redis
+      - ollama
+      - postgres
+    volumes:
+      - ./solvens:/app/solvens:ro
+      - ./.solvens:/app/.solvens  # Persistent storage
+    networks:
+      - solvens-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # ============================================================
+  # Redis Cache
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: solvens-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - solvens-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # ============================================================
+  # Ollama (Local LLM)
+  # ============================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: solvens-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - solvens-network
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  # ============================================================
+  # PostgreSQL (Optional Storage)
+  # ============================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: solvens-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=solvens
+      - POSTGRES_PASSWORD=solvens
+      - POSTGRES_DB=solvens
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - solvens-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U solvens -d solvens"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # ============================================================
+  # Solvens Dashboard (Optional)
+  # ============================================================
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dashboard
+    container_name: solvens-dashboard
+    ports:
+      - "3000:3000"
+    environment:
+      - API_URL=http://solvens-api:8000
+    depends_on:
+      - solvens-api
+    networks:
+      - solvens-network
+    restart: unless-stopped
+
+# ============================================================
+# Networks
+# ============================================================
+networks:
+  solvens-network:
+    driver: bridge
+    name: solvens-network
+
+# ============================================================
+# Volumes
+# ============================================================
+volumes:
+  redis-data:
+    name: solvens-redis-data
+  ollama-models:
+    name: solvens-ollama-models
+  postgres-data:
+    name: solvens-postgres-data

@@ -1,16 +1,16 @@
 [project]
 name = "solvens-core"
-version = "0.1.0"
-description = "AI Operating System - Modular kernel for intelligent agents"
+version = "0.4.5-rc1"
+description = "AI Operating System - Modular kernel for intelligent agents with Cosmos DAG support"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
     {name = "Luis Alberto Burciaga Miker", email = "luis@solvens.amoris"}
 ]
 requires-python = ">=3.11"
-keywords = ["ai", "agents", "orchestration", "llm", "gpt", "claude"]
+keywords = ["ai", "agents", "orchestration", "llm", "gpt", "claude", "cosmos", "dag"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -44,6 +44,12 @@ storage = [
 ]
 vector = [
     "numpy>=1.26.0",
+    "chromadb>=0.5.0",
+    "networkx>=3.0",
+    "sentence-transformers>=3.0",
+]
+cosmos = [
+    "solvens-core[api,cli,storage,vector]",
 ]
 all = [
     "solvens-core[api,cli,storage,vector]",
@@ -59,6 +65,9 @@ dev = [
 
 [project.scripts]
 solvens = "solvens.cli.main:app"
+
+[project.entry-points."solvens.agents"]
+cosmos = "cosmos.solvens_agent:CosmosCompilerAgent"
 
 [build-system]
 requires = ["hatchling"]

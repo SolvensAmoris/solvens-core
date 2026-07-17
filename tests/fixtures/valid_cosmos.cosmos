@@ -1,0 +1,32 @@
+# tests/fixtures/valid_cosmos.cosmos
+# ==================================
+#
+# Valid Cosmos file for testing
+# This file should be APPROVED
+#
+cosmos ResearchAgent {
+    sun CentralOrchestrator
+    
+    planet Researcher {
+        model: claude-3-sonnet
+        connects_to: Coder
+        duration: 30
+    }
+    
+    planet Coder {
+        model: gpt-4
+        connects_to: Reviewer
+        duration: 45
+    }
+    
+    planet Reviewer {
+        model: gemini
+        duration: 20
+    }
+    
+    light ResearchFlow {
+        from: CentralOrchestrator
+        to: [Researcher, Coder, Reviewer]
+    }
+}
+end

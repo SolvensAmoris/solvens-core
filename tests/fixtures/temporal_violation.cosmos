@@ -1,0 +1,22 @@
+# tests/fixtures/temporal_violation.cosmos
+# ===========================================
+#
+# Cosmos file with RFC-0004-F violation
+# This file should be REJECTED with error E401
+#
+# Violation: start_after (100) >= end_before (50)
+#
+cosmos TemporalViolationTest {
+    planet Task1 {
+        start_after: 100
+        end_before: 50
+        model: claude-3-sonnet
+    }
+    
+    planet Task2 {
+        duration: 200
+        end_before: 100
+        model: gpt-4
+    }
+}
+end
