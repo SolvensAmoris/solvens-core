@@ -1,0 +1,4 @@
+run_id,framework,workflow,status,duration_ms,input_tokens,output_tokens,total_tokens,cost_usd,peak_memory_mb,cpu_percent_avg,cache_hit_rate,dag_nodes,throughput_tokens_per_second
+aeac7821,solvens-core,run_0,success,402.18,8,2456,2464,0.0,0.06,0.0,0.0,0,6126.62
+be2a0cde,solvens-core,run_1,success,402.2,8,2456,2464,0.0,0.06,2.5,0.0,0,6126.33
+9ff48e4e,solvens-core,run_2,success,402.29,8,2456,2464,0.0,0.05,0.0,0.0,0,6124.86

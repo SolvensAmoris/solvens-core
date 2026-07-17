@@ -1,0 +1,11 @@
+run_id,framework,workflow,status,duration_ms,input_tokens,output_tokens,total_tokens,cost_usd,peak_memory_mb,cpu_percent_avg,cache_hit_rate,dag_nodes,throughput_tokens_per_second
+93317320,solvens-core,run_0,success,603.22,12,3684,3696,0.0,0.06,0.0,0.0,0,6127.12
+c8cc3ab4,solvens-core,run_1,success,603.2,12,3684,3696,0.0,0.06,0.0,0.0,0,6127.36
+0aacdabe,solvens-core,run_2,success,603.28,12,3684,3696,0.0,0.06,0.0,0.0,0,6126.5
+f4ebc8b8,solvens-core,run_3,success,603.25,12,3684,3696,0.0,0.06,0.0,0.0,0,6126.83
+50c79e8f,solvens-core,run_4,success,603.36,12,3684,3696,0.0,0.06,0.0,0.0,0,6125.71
+47597ab9,solvens-core,run_5,success,603.44,12,3684,3696,0.0,0.06,0.0,0.0,0,6124.9
+c9866555,solvens-core,run_6,success,603.38,12,3684,3696,0.0,0.06,1.67,0.0,0,6125.48
+28d2ae1a,solvens-core,run_7,success,603.27,12,3684,3696,0.0,0.06,0.0,0.0,0,6126.6
+cbd90c0a,solvens-core,run_8,success,603.54,12,3684,3696,0.0,0.06,0.0,0.0,0,6123.82
+368f310b,solvens-core,run_9,success,603.32,12,3684,3696,0.0,0.06,0.0,0.0,0,6126.1

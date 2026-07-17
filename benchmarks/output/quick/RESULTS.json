@@ -1,0 +1,143 @@
+{
+  "experiment": {
+    "experiment_name": "quick-benchmark",
+    "experiment_version": "1.0.0",
+    "date": "2026-07-17T21:13:26.178430",
+    "python_version": "3.13.14",
+    "platform": "Linux-6.8.0-1051-gke-x86_64-with-glibc2.41",
+    "cpu_count": 4,
+    "total_memory_gb": 15.62,
+    "model": "gpt-4o-mini",
+    "provider": "openai",
+    "temperature": 0.7,
+    "max_tokens": 2048,
+    "iterations": 3,
+    "warmup_iterations": 1,
+    "timeout_seconds": 60,
+    "workflow_complexity": "simple",
+    "dag_nodes": 3,
+    "use_mocks": true,
+    "mock_latency_ms": 100.0,
+    "mock_tokens_per_second": 100.0
+  },
+  "generated_at": "2026-07-17T21:13:27.837077",
+  "total_runs": 3,
+  "frameworks": [
+    "solvens-core"
+  ],
+  "framework_stats": {
+    "solvens-core": {
+      "framework": "solvens-core",
+      "runs": 3,
+      "metrics": {
+        "total_duration_ms": {
+          "metric_name": "Total Duration (ms)",
+          "framework": "solvens-core",
+          "workflow": "all",
+          "count": 3,
+          "mean": 402.2241,
+          "median": 402.1982,
+          "std_dev": 0.0617,
+          "min": 402.1795,
+          "max": 402.2946,
+          "p50": 402.1982,
+          "p75": 402.2464,
+          "p90": 402.2753,
+          "p95": 402.285,
+          "p99": 402.2927,
+          "ci_95_lower": 402.1543,
+          "ci_95_upper": 402.294
+        },
+        "total_tokens": {
+          "metric_name": "Total Tokens",
+          "framework": "solvens-core",
+          "workflow": "all",
+          "count": 3,
+          "mean": 2464,
+          "median": 2464,
+          "std_dev": 0.0,
+          "min": 2464,
+          "max": 2464,
+          "p50": 2464.0,
+          "p75": 2464.0,
+          "p90": 2464.0,
+          "p95": 2464.0,
+          "p99": 2464.0,
+          "ci_95_lower": 2464.0,
+          "ci_95_upper": 2464.0
+        },
+        "peak_memory_mb": {
+          "metric_name": "Peak Memory (MB)",
+          "framework": "solvens-core",
+          "workflow": "all",
+          "count": 3,
+          "mean": 0.0555,
+          "median": 0.0554,
+          "std_dev": 0.0009,
+          "min": 0.0546,
+          "max": 0.0564,
+          "p50": 0.0554,
+          "p75": 0.0559,
+          "p90": 0.0562,
+          "p95": 0.0563,
+          "p99": 0.0564,
+          "ci_95_lower": 0.0544,
+          "ci_95_upper": 0.0565
+        },
+        "throughput_tokens_per_second": {
+          "metric_name": "Throughput (tokens/s)",
+          "framework": "solvens-core",
+          "workflow": "all",
+          "count": 3,
+          "mean": 6125.9379,
+          "median": 6126.332,
+          "std_dev": 0.9403,
+          "min": 6124.8647,
+          "max": 6126.617,
+          "p50": 6126.332,
+          "p75": 6126.4745,
+          "p90": 6126.56,
+          "p95": 6126.5885,
+          "p99": 6126.6113,
+          "ci_95_lower": 6124.8739,
+          "ci_95_upper": 6127.0019
+        }
+      }
+    }
+  },
+  "raw_runs": [
+    {
+      "run_id": "aeac7821",
+      "framework": "solvens-core",
+      "workflow": "run_0",
+      "status": "success",
+      "duration_ms": 402.18,
+      "tokens": 2464,
+      "cost_usd": 0.0,
+      "memory_mb": 0.06,
+      "cache_hit_rate": 0.0
+    },
+    {
+      "run_id": "be2a0cde",
+      "framework": "solvens-core",
+      "workflow": "run_1",
+      "status": "success",
+      "duration_ms": 402.2,
+      "tokens": 2464,
+      "cost_usd": 0.0,
+      "memory_mb": 0.06,
+      "cache_hit_rate": 0.0
+    },
+    {
+      "run_id": "9ff48e4e",
+      "framework": "solvens-core",
+      "workflow": "run_2",
+      "status": "success",
+      "duration_ms": 402.29,
+      "tokens": 2464,
+      "cost_usd": 0.0,
+      "memory_mb": 0.05,
+      "cache_hit_rate": 0.0
+    }
+  ]
+}
