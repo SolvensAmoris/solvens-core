@@ -1,0 +1,25 @@
+[Unit]
+Description=SOLVENS CORE - AI Operating System
+After=network.target
+
+[Service]
+Type=simple
+User=%u
+WorkingDirectory=%h/.solvens
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/usr/local/bin/solvens api
+Restart=always
+RestartSec=5
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=%h/.solvens
+
+# Environment file
+EnvironmentFile=%h/.solvens/env
+
+[Install]
+WantedBy=default.target

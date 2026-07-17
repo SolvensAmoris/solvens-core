@@ -1,0 +1,44 @@
+version: "3.8"
+
+services:
+  solvens-core:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: solvens-core
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - SOLVENS_DATA_DIR=/data
+      # API Keys (set in .env or use docker secrets)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+    volumes:
+      - solvens-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Optional: Ollama for local inference
+  ollama:
+    image: ollama/ollama:latest
+    container_name: solvens-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+    profiles:
+      - with-ollama
+
+volumes:
+  solvens-data:
+    driver: local
+  ollama-data:
+    driver: local
