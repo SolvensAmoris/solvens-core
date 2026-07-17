@@ -32,7 +32,7 @@ from typing import Any, Callable, Dict, List, Optional, Set
 from collections import defaultdict
 
 from solvens.cosmos.moat_parser import CosmosDAG, CosmosNode, NodeType
-from solvens.router.smart_router import SmartRouter, TaskType
+from cosmos.router.smart_router import SmartRouter, TaskType
 
 logger = logging.getLogger("solvens.cosmos.executor")
 

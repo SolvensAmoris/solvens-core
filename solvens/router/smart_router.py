@@ -5,6 +5,8 @@ solvens/router/smart_router.py
 SMART ROUTER v0.2
 =================
 
+[DEPRECATED] Esta implementación ha sido migrada a cosmos/router/smart_router.py
+
 Routes tasks to optimal provider based on:
 - Task type (code, research, vision, etc.)
 - Cost efficiency
@@ -15,9 +17,17 @@ Providers: Grok (primary) + Ollama (fallback)
 
 Autor: Luis Alberto Burciaga Miker
 Version: 0.2.0
+
+MIGRATION: Usar cosmos.router.smart_router en su lugar.
 """
 
 from __future__ import annotations
+import warnings
+warnings.warn(
+    "solvens.router.smart_router is deprecated. Use cosmos.router.smart_router instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 import asyncio
 import logging

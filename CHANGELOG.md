@@ -4,6 +4,22 @@ All notable changes to SOLVENS CORE will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.5.1-rc1] - 2025-01-17 - "SmartRouter Migration"
+
+### Changed
+
+- **SmartRouter Migration**
+  - Copied `solvens/router/smart_router.py` → `cosmos/router/smart_router.py`
+  - Updated `cosmos/moat/moat_executor.py` to use new import
+  - Added deprecation warning to `solvens/router/smart_router.py`
+  - SmartRouter now resides in cosmos/ as architecture intended
+
+### Fixed
+
+- SmartRouter dependency resolved
+
+---
+
 ## [0.5.0-rc1] - 2025-01-17 - "Architectural Consolidation"
 
 ### Added

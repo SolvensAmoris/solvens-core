@@ -57,31 +57,25 @@ solvens/cosmos/
 
 ### 2. `solvens/router/` (Directorio Completo)
 
-**Estado:** ⚠️ DEPENDENCY - No Deprecado Todavía
+**Estado:** ⚠️ PARTIALLY DEPRECATED - En transición
 
-**Razón:** Usado activamente por:
-- `cosmos/moat/moat_executor.py` - importa `solvens.router.smart_router`
+**Razón:** SmartRouter migrado a cosmos/, pero otros componentes aún usan este directorio.
 
-**Archivos en el directorio:**
-```
-solvens/router/
-├── __init__.py
-├── router.py             # CapabilityRouter base
-├── rules.py              # DefaultRoutingRules
-├── smart_router.py       # SmartRouter ⚠️ UNICO EN EL PROYECTO
-└── simple_router.py      # Router simple
-```
+**Cambios Realizados:**
+- ✅ `smart_router.py` copiado a `cosmos/router/smart_router.py`
+- ✅ `cosmos/moat/moat_executor.py` actualizado para usar `cosmos.router.smart_router`
+- ⚠️ `solvens/router/smart_router.py` emitiendo deprecation warnings
 
-**Imports detectados:**
-| Archivo | Importa de solvens.router |
-|---------|-------------------------|
-| cosmos/moat/moat_executor.py | ✅ Sí (SmartRouter, TaskType) |
-| tests/unit/test_router.py | ✅ Sí |
-| solvens/cli/main.py | ✅ Sí (CapabilityRouter) |
-| solvens/api/main.py | ✅ Sí (CapabilityRouter) |
-| solvens/agents/orchestrator.py | ✅ Sí (CapabilityRouter) |
+**Dependencias restantes:**
+| Archivo | Usa | Estado |
+|---------|-----|--------|
+| `cosmos/moat/moat_executor.py` | SmartRouter | ✅ Migrado |
+| `solvens/cli/launch.py` | SmartRouter | ⚠️ Legacy |
+| `solvens/cli/main.py` | CapabilityRouter | ⚠️ Legacy |
+| `solvens/api/main.py` | CapabilityRouter | ⚠️ Legacy |
+| `solvens/agents/orchestrator.py` | CapabilityRouter | ⚠️ Legacy |
 
-**Dependencia Crítica:** `SmartRouter` y `TaskType` NO existen en `cosmos/router/`.
+**Plan:** Migrar CLI y API a `cosmos.router` y deprecar completamente en v0.6.0.
 
 ---
 
