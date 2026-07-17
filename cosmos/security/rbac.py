@@ -13,7 +13,7 @@ Features:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import timezone, datetime, timedelta
 from enum import Enum
 from typing import Optional, Set
 import hashlib
@@ -208,7 +208,17 @@ class RBAC:
     """
     
     def __init__(self, secret_key: Optional[str] = None):
-        self._secret_key = secret_key or os.getenv("SOLVENS_SECRET_KEY", "dev-secret")
+        env_secret = os.getenv("SOLVENS_SECRET_KEY")
+        if not secret_key and not env_secret:
+            import secrets
+            secret_key = secrets.token_urlsafe(32)
+            import logging
+            logging.warning(
+                "RBAC: No secret key configured. Generated temporary key: %s... "
+                "Set SOLVENS_SECRET_KEY environment variable for production.",
+                secret_key[:8]
+            )
+        self._secret_key = secret_key or env_secret or "dev-secret-insecure"
         self._users: dict[str, User] = {}
         self._api_keys: dict[str, APIKey] = {}
         self._teams: dict[str, Team] = {}
@@ -292,7 +302,7 @@ class RBAC:
         
         expires_at = None
         if expires_days:
-            expires_at = datetime.utcnow() + timedelta(days=expires_days)
+            expires_at = datetime.now(timezone.utc) + timedelta(days=expires_days)
         
         api_key = APIKey(
             id=self._generate_id(),
@@ -327,9 +337,9 @@ class RBAC:
             if api_key.key_hash == key_hash:
                 if not api_key.is_active:
                     return None
-                if api_key.expires_at and api_key.expires_at < datetime.utcnow():
+                if api_key.expires_at and api_key.expires_at < datetime.now(timezone.utc):
                     return None
-                api_key.last_used = datetime.utcnow()
+                api_key.last_used = datetime.now(timezone.utc)
                 return api_key
         
         return None
@@ -479,7 +489,7 @@ class RBAC:
     
     def generate_token(self, user: User, expires_hours: int = 24) -> str:
         """Generate simple token for user."""
-        exp = datetime.utcnow() + timedelta(hours=expires_hours)
+        exp = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
         payload = {
             "user_id": user.id,
             "email": user.email,
@@ -503,7 +513,7 @@ class RBAC:
                 return None
             payload = json.loads(base64.b64decode(data))
             exp = datetime.fromisoformat(payload["exp"])
-            if exp < datetime.utcnow():
+            if exp < datetime.now(timezone.utc):
                 return None
             return payload
         except Exception:
@@ -528,7 +538,7 @@ class RBAC:
         """Record audit entry."""
         entry = AuditEntry(
             id=self._generate_id(),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             event_type=event_type,
             actor_id=actor_id,
             actor_type=actor_type,

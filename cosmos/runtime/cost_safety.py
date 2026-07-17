@@ -12,7 +12,7 @@ Key Features:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import timezone, datetime, timedelta
 from typing import Optional, Callable
 from enum import Enum
 import threading
@@ -297,7 +297,7 @@ class CircuitBreaker:
             # Auto-reset after cooldown
             if self._opened_at:
                 cooldown = timedelta(minutes=1)
-                if datetime.utcnow() - self._opened_at > cooldown:
+                if datetime.now(timezone.utc) - self._opened_at > cooldown:
                     self._state = "half-open"
                     logger.info("Circuit breaker entering half-open state")
         return self._state
@@ -344,7 +344,7 @@ class CircuitBreaker:
         self._failure_count += 1
         if self._failure_count >= self._threshold:
             self._state = "open"
-            self._opened_at = datetime.utcnow()
+            self._opened_at = datetime.now(timezone.utc)
             logger.error(f"Circuit breaker OPENED after {self._failure_count} failures")
     
     def record_success(self) -> None:
@@ -391,7 +391,7 @@ class BudgetManager:
                 self._rate_limits[ip_address] = RateLimit(ip_address=ip_address)
             
             limit = self._rate_limits[ip_address]
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             
             # Reset counters if time window passed
             if limit.last_request:
@@ -445,7 +445,7 @@ class BudgetManager:
                 return False, "Budget disabled"
             
             # Check daily spending
-            today = datetime.utcnow().date()
+            today = datetime.now(timezone.utc).date()
             today_spending = sum(
                 r.cost_usd for r in self._spending.get(key, [])
                 if r.started_at.date() == today
@@ -488,7 +488,7 @@ class BudgetManager:
                     if record.run_id == run_id and record.completed_at is None:
                         record.aborted = True
                         record.abort_reason = reason
-                        record.completed_at = datetime.utcnow()
+                        record.completed_at = datetime.now(timezone.utc)
                         logger.warning(f"Run {run_id} aborted: {reason}")
                         return
     
@@ -498,7 +498,7 @@ class BudgetManager:
             key = self._make_key(team_id)
             records = self._spending.get(key, [])
             
-            cutoff = datetime.utcnow() - timedelta(days=days)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
             
             total_cost = sum(r.cost_usd for r in records if r.started_at > cutoff)
             total_runs = len([r for r in records if r.started_at > cutoff])

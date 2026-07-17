@@ -26,7 +26,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import timezone, datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -118,7 +118,7 @@ class Explanation:
             for ref in self.references:
                 md += f"- {ref}\n"
         
-        md += f"\n---\n*Confidence: {self.confidence:.0%} | Generated: {datetime.utcnow().isoformat()}*\n"
+        md += f"\n---\n*Confidence: {self.confidence:.0%} | Generated: {datetime.now(timezone.utc).isoformat()}*\n"
         return md
     
     def to_json(self) -> str:

@@ -7,7 +7,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import timezone, datetime
 from typing import Any, Callable, TypeVar
 
 import structlog
@@ -175,7 +175,7 @@ class AgentOrchestrator(BaseService[None]):
 
     async def _execute_task(self, task: Task) -> None:
         """Execute a single task."""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         
         try:
             task.start()
@@ -291,9 +291,9 @@ class AgentOrchestrator(BaseService[None]):
         )
         self._tasks[task.id] = task
         
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         await self._execute_task(task)
-        duration = (datetime.utcnow() - start_time).total_seconds()
+        duration = (datetime.now(timezone.utc) - start_time).total_seconds()
         
         return TaskResult(
             task_id=task.id,

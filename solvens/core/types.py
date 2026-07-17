@@ -5,7 +5,7 @@ Defines the fundamental types used throughout the system.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import timezone, datetime
 from enum import Enum
 from typing import Any, Literal
 
@@ -95,24 +95,24 @@ class Task(BaseModel):
     def start(self) -> None:
         """Mark task as started."""
         self.status = TaskStatus.RUNNING
-        self.started_at = datetime.utcnow()
+        self.started_at = datetime.now(timezone.utc)
 
     def complete(self, result: Any | None = None) -> None:
         """Mark task as completed."""
         self.status = TaskStatus.COMPLETED
-        self.completed_at = datetime.utcnow()
+        self.completed_at = datetime.now(timezone.utc)
         self.result = result
 
     def fail(self, error: str) -> None:
         """Mark task as failed."""
         self.status = TaskStatus.FAILED
-        self.completed_at = datetime.utcnow()
+        self.completed_at = datetime.now(timezone.utc)
         self.error = error
 
     def cancel(self) -> None:
         """Mark task as cancelled."""
         self.status = TaskStatus.CANCELLED
-        self.completed_at = datetime.utcnow()
+        self.completed_at = datetime.now(timezone.utc)
 
 
 class ProviderType(str, Enum):

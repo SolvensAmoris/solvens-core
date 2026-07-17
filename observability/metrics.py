@@ -11,7 +11,7 @@ Cost guardrails per team with budget alerts.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import timezone, datetime, timedelta
 from typing import Optional
 from enum import Enum
 import threading
@@ -132,7 +132,7 @@ class MetricsCollector:
             workflow_name=workflow_name,
             team_id=team_id,
             status="running",
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc),
         )
         with self._lock:
             self._runs[run_id] = run
@@ -157,7 +157,7 @@ class MetricsCollector:
             
             run = self._runs[run_id]
             run.status = status
-            run.completed_at = datetime.utcnow()
+            run.completed_at = datetime.now(timezone.utc)
             run.duration_seconds = duration_seconds
             run.input_tokens = input_tokens
             run.output_tokens = output_tokens
