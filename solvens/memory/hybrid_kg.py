@@ -227,6 +227,10 @@ class HybridKnowledgeGraph:
         self._nx = None
         self._embedder = None
         
+        # Node embeddings
+        self.node_embeddings: Dict[str, List[float]] = {}  # node_id -> embedding
+        self._node_collection = None
+        
         self._init_components()
         
         # Triple extractor
@@ -246,10 +250,16 @@ class HybridKnowledgeGraph:
                 name=self.collection_name,
                 metadata={"description": "Solvens Hybrid Knowledge Base"}
             )
-            logger.info("ChromaDB initialized")
+            # Node collection
+            self._node_collection = self._chroma.get_or_create_collection(
+                name=f"{self.collection_name}_nodes",
+                metadata={"hnsw:space": "cosine", "description": "Node embeddings"}
+            )
+            logger.info("ChromaDB initialized with node collection")
         except ImportError:
             logger.warning("ChromaDB not installed. Run: pip install chromadb")
             self._collection = None
+            self._node_collection = None
         
         # NetworkX
         try:
@@ -513,8 +523,288 @@ class HybridKnowledgeGraph:
             except:
                 pass
         
+        if self._node_collection:
+            try:
+                self._chroma.delete_collection(f"{self.collection_name}_nodes")
+                self._node_collection = self._chroma.get_or_create_collection(
+                    f"{self.collection_name}_nodes"
+                )
+            except:
+                pass
+        
+        self.node_embeddings.clear()
+        
         if self._graph:
             self._graph.clear()
+    
+    # ============================================================
+    # NODE EMBEDDINGS
+    # ============================================================
+    
+    def _normalize_node_id(self, name: str) -> str:
+        """Normaliza ID de nodo."""
+        return name.lower().replace(" ", "_").replace(".", "").replace(",", "")
+    
+    def embed_node(
+        self, 
+        node_id: str, 
+        content: str, 
+        metadata: Dict[str, Any] = None
+    ) -> Optional[List[float]]:
+        """
+        Genera y guarda embedding para un nodo.
+        
+        Args:
+            node_id: Identificador unico del nodo
+            content: Contenido para generar embedding
+            metadata: Metadata opcional
+            
+        Returns:
+            Embedding vector o None si falla
+        """
+        if metadata is None:
+            metadata = {}
+        
+        if not self._embedder or not self._node_collection:
+            return None
+        
+        try:
+            emb = self._embedder.encode([content], normalize_embeddings=True)[0].tolist()
+            
+            self.node_embeddings[node_id] = emb
+            self._node_collection.add(
+                documents=[content],
+                embeddings=[emb],
+                ids=[node_id],
+                metadatas=[metadata]
+            )
+            
+            logger.debug(f"Embedded node: {node_id}")
+            return emb
+            
+        except Exception as e:
+            logger.error(f"Failed to embed node {node_id}: {e}")
+            return None
+    
+    def ingest_with_node_embeddings(
+        self, 
+        texts: List[str], 
+        metadatas: List[Dict[str, Any]] = None,
+        extract_triples: bool = True
+    ) -> List[str]:
+        """
+        Ingesta completa: text -> triples -> nodes con embeddings.
+        
+        Args:
+            texts: Lista de documentos
+            metadatas: Metadata por documento
+            extract_triples: Si extraer triples
+            
+        Returns:
+            Lista de IDs de documentos ingeridos
+        """
+        if metadatas is None:
+            metadatas = [{} for _ in texts]
+        
+        # Base ingestion (vector + graph)
+        ids = self.ingest(texts, metadatas, extract_triples=extract_triples)
+        
+        # Crear nodos con embeddings
+        for text, meta in zip(texts, metadatas):
+            # Extraer entidades/nodos principales
+            entities = self._extract_entities_from_text(text)
+            
+            for ent in entities:
+                node_id = self._normalize_node_id(ent)
+                content = ent + ": " + text[:500]
+                
+                self.embed_node(
+                    node_id=node_id,
+                    content=content,
+                    metadata=meta
+                )
+                
+                # Link al graph si existe
+                if self._graph and ent in self._graph:
+                    # Anadir embedding al nodo del graph
+                    if 'embedding' not in self._graph.nodes[ent]:
+                        self._graph.nodes[ent]['embedding'] = self.node_embeddings.get(node_id)
+        
+        logger.info(f"Ingested {len(ids)} docs with node embeddings")
+        return ids
+    
+    def _extract_entities_from_text(self, text: str) -> List[str]:
+        """
+        Extrae entidades de un texto para crear nodos.
+        
+        Usa el entity extractor o LLM si esta disponible.
+        """
+        entities = []
+        
+        # Usar entity extractor
+        extracted = self.entity_extractor.extract(text)
+        for ent in extracted:
+            entities.append(ent["text"])
+        
+        # Fallback: palabras clave importantes
+        if not entities:
+            import re
+            words = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', text)
+            entities = list(set(words[:10]))  # Max 10
+        
+        return entities
+    
+    def node_similarity_search(
+        self, 
+        query: str, 
+        top_k: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Busqueda semantica pura en nodos del grafo.
+        
+        Args:
+            query: Query string
+            top_k: Numero de resultados
+            
+        Returns:
+            Lista de nodos similares con scores
+        """
+        if not self._embedder or not self._node_collection:
+            return []
+        
+        try:
+            query_emb = self._embedder.encode([query], normalize_embeddings=True)[0].tolist()
+            results = self._node_collection.query(
+                query_embeddings=[query_emb],
+                n_results=top_k,
+                include=["documents", "metadatas", "distances"]
+            )
+            
+            similar = []
+            for i, res_id in enumerate(results.get('ids', [[]])[0] or []):
+                doc = results['documents'][0][i] if results.get('documents') else ""
+                dist = results['distances'][0][i] if results.get('distances') else 1.0
+                meta = results['metadatas'][0][i] if results.get('metadatas') else {}
+                
+                similar.append({
+                    "node": res_id,
+                    "content": doc,
+                    "score": 1 - min(dist, 1),  # Convert distance to similarity
+                    "metadata": meta
+                })
+            
+            return similar
+            
+        except Exception as e:
+            logger.error(f"Node similarity search failed: {e}")
+            return []
+    
+    def enrich_dag_with_node_vectors(
+        self, 
+        dag: Any, 
+        query: str,
+        threshold_low: float = 0.65,
+        threshold_high: float = 0.75
+    ) -> Dict[str, Any]:
+        """
+        Enrich Cosmos DAG nodes con nearest nodes vectoriales.
+        
+        Args:
+            dag: CosmosDAG a enriquecer
+            query: Query para busqueda de nodos similares
+            threshold_low: Umbral minimo para agregar contexto
+            threshold_high: Umbral para agregar edges semanticos
+            
+        Returns:
+            Dict con informacion del enrichment
+        """
+        similar_nodes = self.node_similarity_search(query, top_k=8)
+        
+        if not similar_nodes:
+            return {"enriched_nodes": 0, "added_edges": 0}
+        
+        enriched_count = 0
+        added_edges = 0
+        
+        # Enriquecer nodos del DAG
+        if hasattr(dag, 'nodes'):
+            for node_id, node in dag.nodes.items():
+                # Agregar vector context
+                node_context = [
+                    n for n in similar_nodes 
+                    if n['score'] > threshold_low
+                ][:4]
+                
+                if node_context:
+                    if not hasattr(node, 'properties'):
+                        node.properties = {}
+                    node.properties['vector_context'] = node_context
+                    enriched_count += 1
+                
+                # Agregar edges a nodos similares (alta similitud)
+                for sim in similar_nodes:
+                    if sim['score'] > threshold_high:
+                        if hasattr(dag, 'nodes') and hasattr(dag, 'edges'):
+                            edge_exists = any(
+                                e.source == node_id and e.target == sim['node']
+                                for e in dag.edges
+                            )
+                            if not edge_exists:
+                                from solvens.cosmos.moat_parser import CosmosEdge
+                                dag.edges.append(CosmosEdge(
+                                    source=node_id,
+                                    target=sim['node'],
+                                    edge_type="semantic_similarity",
+                                    label=f"similar_{sim['score']:.2f}",
+                                    properties={"score": sim['score']}
+                                ))
+                                added_edges += 1
+        
+        logger.info(f"DAG enriched: {enriched_count} nodes, {added_edges} edges")
+        
+        return {
+            "enriched_nodes": enriched_count,
+            "added_edges": added_edges,
+            "similar_nodes": len(similar_nodes)
+        }
+    
+    def get_node_clusters(self, min_similarity: float = 0.7) -> List[List[str]]:
+        """
+        Obtiene clusters de nodos similares.
+        
+        Usa similarity search para agrupar nodos relacionados.
+        
+        Args:
+            min_similarity: Score minimo para considerar similar
+            
+        Returns:
+            Lista de clusters (listas de node_ids)
+        """
+        if not self.node_embeddings:
+            return []
+        
+        clusters = []
+        processed = set()
+        
+        for node_id in self.node_embeddings:
+            if node_id in processed:
+                continue
+            
+            # Buscar similares
+            similar = self.node_similarity_search(node_id, top_k=10)
+            
+            cluster = [node_id]
+            for sim in similar:
+                if sim['score'] > min_similarity and sim['node'] not in processed:
+                    cluster.append(sim['node'])
+                    processed.add(sim['node'])
+            
+            if len(cluster) > 1:
+                clusters.append(cluster)
+            
+            processed.add(node_id)
+        
+        return clusters
     
     # ============================================================
     # LLM-POWERED METHODS (via router)
