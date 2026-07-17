@@ -1,0 +1,78 @@
+# Meta Builder - Agents Building Agents
+# This workflow generates .cosmos files from natural language
+
+provider claude {
+  type: "anthropic"
+  model: "claude-3-5-sonnet-20240620"
+}
+
+agent meta_architect {
+  provider: claude
+  system: """
+  You are an expert in Cosmos Language.
+  
+  Cosmos Language Spec:
+  - provider <name> { type: "provider", model: "model-name" }
+  - agent <name> { provider: <provider>, system: "system prompt" }
+  - task <name> { agent: <agent>, depends_on: [<task1>, <task2>] }
+  
+  Generate complete, valid .cosmos files based on user requirements.
+  Include realistic task dependencies and provider assignments.
+  """
+}
+
+agent code_generator {
+  provider: claude
+  system: "You generate implementation code for Cosmos tasks."
+}
+
+agent tester {
+  provider: claude
+  system: "You generate pytest tests for Cosmos workflows."
+}
+
+agent optimizer {
+  provider: claude
+  system: "You optimize Cosmos workflows for cost and speed."
+}
+
+task parse_requirements {
+  agent: meta_architect
+  input: "User request: {user_request}"
+  output: "Structured requirements: {structured_spec}"
+}
+
+task generate_design {
+  agent: meta_architect
+  depends_on: [parse_requirements]
+  input: "Requirements: {structured_spec}"
+  output: "Design: {design_spec}"
+}
+
+task write_cosmos_file {
+  agent: meta_architect
+  depends_on: [generate_design]
+  input: "Design: {design_spec}"
+  output: "File: {cosmos_filename}, Content: {cosmos_content}"
+}
+
+task generate_tests {
+  agent: tester
+  depends_on: [write_cosmos_file]
+  input: "Cosmos: {cosmos_content}"
+  output: "Test file: {test_filename}"
+}
+
+task optimize_workflow {
+  agent: optimizer
+  depends_on: [write_cosmos_file]
+  input: "Cosmos: {cosmos_content}"
+  output: "Optimized Cosmos: {optimized_content}"
+}
+
+task generate_docs {
+  agent: meta_architect
+  depends_on: [write_cosmos_file]
+  input: "Cosmos: {cosmos_content}"
+  output: "README.md content"
+}

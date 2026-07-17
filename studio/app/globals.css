@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0a0a0f;
+  --foreground: #ffffff;
+  --card: #0f0f14;
+  --border: #1a1a24;
+  --primary: #6366f1;
+  --accent: #22d3ee;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+code, pre, .font-mono {
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #6366f1, #22d3ee);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Monaco Editor customization */
+.monaco-editor {
+  border-radius: 8px;
+}
+
+.monaco-editor .margin {
+  background: var(--card) !important;
+}
+
+/* React Flow customization */
+.react-flow__background {
+  background: var(--background) !important;
+}
+
+.react-flow__edge-path {
+  stroke: #6366f1 !important;
+}
+
+.react-flow__controls {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+}
+
+/* Copilot suggestion */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.copilot-suggestion {
+  animation: slideIn 0.2s ease-out;
+}
+
+/* Status bar */
+.status-bar {
+  background: linear-gradient(90deg, #6366f1, #22d3ee);
+}
+
+/* Glow effects */
+.glow-green {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+}
+
+.glow-purple {
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
+}
