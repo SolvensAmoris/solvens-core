@@ -515,6 +515,162 @@ class HybridKnowledgeGraph:
         
         if self._graph:
             self._graph.clear()
+    
+    # ============================================================
+    # LLM-POWERED METHODS (via router)
+    # ============================================================
+    
+    def set_router(self, router):
+        """Inyecta router para LLM calls."""
+        self.router = router
+    
+    def _extract_triples_llm(self, text: str) -> List[Tuple[str, str, str]]:
+        """
+        LLM-powered triple extraction via router.
+        
+        Few-shot prompt para mejor calidad.
+        """
+        if not self.router:
+            return []
+        
+        few_shot = """
+Examples:
+Input: "Apple acquired DarwinAI in 2024"
+Output: apple|acquired|darwinai
+Input: "Microsoft is a tech company based in Redmond"
+Output: microsoft|is_a|tech_company
+       microsoft|located_in|redmond
+Input: "Google develops AI products"
+Output: google|develops|ai_products
+
+Input: {text}
+Output:"""
+        
+        prompt = f"""Extract triples (subject, predicate, object) from the following text.
+Respond ONLY with lines of subject|predicate|object.
+Use lowercase. Maximum 10 triples.
+
+{few_shot}"""
+        
+        try:
+            response = self.router.execute(prompt)
+            content = response.get("content", "")
+            
+            triples = []
+            for line in content.strip().split('\n'):
+                if '|' in line:
+                    parts = [p.strip().lower().replace(" ", "_") for p in line.split('|')]
+                    if len(parts) == 3:
+                        triples.append(tuple(parts)))
+            
+            return triples
+        except Exception as e:
+            logger.warning(f"LLM triple extraction failed: {e}")
+            return []
+    
+    def ingest_with_llm(
+        self,
+        texts: List[str],
+        metadatas: List[Dict] = None,
+        extract_triples: bool = True
+    ) -> int:
+        """
+        Ingest con LLM-powered triple extraction.
+        
+        Args:
+            texts: Documentos a ingestar
+            metadatas: Metadata por documento
+            extract_triples: Si usar LLM para triples
+            
+        Returns:
+            Número de documentos ingeridos
+        """
+        if metadatas is None:
+            metadatas = [{} for _ in texts]
+        
+        ingested = 0
+        
+        for text, meta in zip(texts, metadatas):
+            doc_id = meta.get("id", f"doc_{uuid.uuid4().hex[:8]}")
+            
+            # Vector embedding
+            if self._collection and self._embedder:
+                try:
+                    embedding = self._embedder.encode([text])[0].tolist()
+                    self._collection.add(
+                        documents=[text],
+                        embeddings=[embedding],
+                        ids=[doc_id],
+                        metadatas=[{**meta, "text_hash": hashlib.md5(text.encode()).hexdigest()}]
+                    )
+                    ingested += 1
+                except Exception as e:
+                    logger.error(f"Vector ingestion failed: {e}")
+            
+            # LLM triples
+            if extract_triples and self.router and self._graph:
+                triples = self._extract_triples_llm(text)
+                for subj, pred, obj in triples:
+                    self._graph.add_edge(
+                        subj, obj,
+                        relation=pred,
+                        source=doc_id,
+                        extracted_by="llm"
+                    )
+        
+        logger.info(f"LLM ingest complete: {ingested} docs, {len(self._graph.edges) if self._graph else 0} triples")
+        return ingested
+    
+    def enrich_dag_context(self, dag: Any, query: str, k: int = 5) -> Dict[str, Any]:
+        """
+        Enrich Cosmos DAG con contexto del knowledge graph.
+        
+        Args:
+            dag: CosmosDAG a enriquecer
+            query: Query para retrieval
+            
+        Returns:
+            Contexto enriquecido para injection
+        """
+        results = self.hybrid_retrieve(query, k=k)
+        
+        context = {
+            "retrieved_docs": results,
+            "top_entities": [],
+            "graph_paths": []
+        }
+        
+        # Extract top entities
+        for result in results[:3]:
+            if result.entities:
+                context["top_entities"].extend(result.entities)
+        
+        # Get graph paths
+        for entity in context["top_entities"][:3]:
+            subgraph = self.get_subgraph(entity, depth=1)
+            if subgraph["nodes"]:
+                context["graph_paths"].append(subgraph)
+        
+        return context
+    
+    def self_improve(self, query: str, response: str) -> int:
+        """
+        Self-improvement: ingesta resultado para futuras queries.
+        
+        Args:
+            query: Query original
+            response: Respuesta generada
+            
+        Returns:
+            Número de items ingeridos
+        """
+        combined = f"Query: {query}\nResponse: {response}"
+        
+        return self.ingest(
+            [combined],
+            [{"type": "agent_output", "query_hash": hashlib.md5(query.encode()).hexdigest()}],
+            extract_triples=True
+        )
 
 
 # ============================================================
@@ -524,7 +680,7 @@ class HybridKnowledgeGraph:
 async def demo():
     """Demo del Hybrid Knowledge Graph."""
     print("=" * 60)
-    print("HYBRID KNOWLEDGE GRAPH v0.2")
+    print("HYBRID KNOWLEDGE GRAPH v0.2 - REFINED")
     print("=" * 60)
     
     kg = HybridKnowledgeGraph()
