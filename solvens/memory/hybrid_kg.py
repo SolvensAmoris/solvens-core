@@ -807,6 +807,338 @@ class HybridKnowledgeGraph:
         return clusters
     
     # ============================================================
+    # LOUVAIN CLUSTERING - Community Detection
+    # ============================================================
+    
+    def run_louvain_clustering(
+        self, 
+        resolution: float = 1.0,
+        weight_attr: str = 'weight'
+    ) -> Dict[int, List[str]]:
+        """
+        Aplica Louvain community detection sobre el grafo.
+        
+        Args:
+            resolution: Resolution parameter (higher = more smaller clusters)
+            weight_attr: Edge attribute to use as weight
+            
+        Returns:
+            Dict {community_id: [nodes]}
+        """
+        if not self._graph or len(self._graph.nodes) < 3:
+            return {0: list(self._graph.nodes) if self._graph else []}
+        
+        try:
+            import community as community_louvain
+            
+            # Louvain optimizado para weighted graphs
+            partition = community_louvain.best_partition(
+                self._graph.to_undirected(), 
+                resolution=resolution,
+                weight=weight_attr
+            )
+            
+            # Agrupar por comunidad
+            from collections import defaultdict
+            communities = defaultdict(list)
+            for node, comm_id in partition.items():
+                communities[comm_id].append(node)
+            
+            # Agrega metadata al grafo
+            for node, comm_id in partition.items():
+                if node in self._graph:
+                    self._graph.nodes[node]['community'] = comm_id
+            
+            self.communities = dict(communities)
+            logger.info(f"Louvain clustering: {len(self.communities)} communities detected")
+            
+            return self.communities
+            
+        except ImportError:
+            logger.warning("python-louvain not installed. Run: pip install python-louvain")
+            return self._basic_clustering()
+        except Exception as e:
+            logger.error(f"Louvain clustering failed: {e}")
+            return {0: list(self._graph.nodes)}
+    
+    def _basic_clustering(self) -> Dict[int, List[str]]:
+        """
+        Clustering basico cuando Louvain no esta disponible.
+        
+        Usa simple connected components.
+        """
+        if not self._graph:
+            return {}
+        
+        try:
+            import networkx as nx
+            components = list(nx.connected_components(self._graph.to_undirected()))
+            return {i: list(comp) for i, comp in enumerate(components)}
+        except:
+            return {0: list(self._graph.nodes)}
+    
+    def get_community_summary(self) -> List[Dict[str, Any]]:
+        """
+        Resumen de clusters para decision-making.
+        
+        Returns:
+            Lista de summaries con metadata de cada comunidad
+        """
+        if not hasattr(self, 'communities') or not self.communities:
+            self.run_louvain_clustering()
+        
+        summaries = []
+        
+        for cid, nodes in self.communities.items():
+            if not nodes:
+                continue
+                
+            summary = {
+                "community_id": cid,
+                "size": len(nodes),
+                "nodes": nodes[:10],  # Top 10
+                "density": 0,
+                "central_nodes": [],
+                "sample_relations": [],
+                "keywords": self._extract_cluster_keywords(nodes)
+            }
+            
+            # Subgraph para metricas
+            if self._graph and len(nodes) > 1:
+                try:
+                    subgraph = self._graph.subgraph(nodes)
+                    summary["density"] = self._nx.density(subgraph) if self._nx else 0
+                    summary["central_nodes"] = self._get_central_nodes(subgraph, 3)
+                    summary["sample_relations"] = list(subgraph.edges(data=True))[:5]
+                except:
+                    pass
+            
+            summaries.append(summary)
+        
+        # Ordenar por size
+        summaries.sort(key=lambda x: x["size"], reverse=True)
+        
+        return summaries
+    
+    def _get_central_nodes(self, subgraph, top_k: int = 3) -> List[Tuple[str, int]]:
+        """
+        Nodos mas centrales (degree centrality).
+        
+        Args:
+            subgraph: Subgraph a analizar
+            top_k: Numero de nodos a retornar
+            
+        Returns:
+            Lista de (node_id, degree) tuples
+        """
+        try:
+            degrees = dict(subgraph.degree())
+            return sorted(degrees.items(), key=lambda x: x[1], reverse=True)[:top_k]
+        except:
+            return []
+    
+    def _extract_cluster_keywords(self, nodes: List[str]) -> List[str]:
+        """
+        Extrae keywords de un cluster basandose en los nodos.
+        
+        Args:
+            nodes: Lista de node_ids en el cluster
+            
+        Returns:
+            Lista de keywords
+        """
+        keywords = []
+        
+        # Common patterns
+        tech_keywords = ['ai', 'ml', 'llm', 'api', 'cloud', 'data', 'tech']
+        legal_keywords = ['law', 'court', 'legal', 'act', 'regulation', 'boe']
+        market_keywords = ['market', 'sales', 'revenue', 'cost', 'profit', 'growth']
+        
+        nodes_str = ' '.join(nodes).lower()
+        
+        for kw in tech_keywords:
+            if kw in nodes_str:
+                keywords.append(kw)
+        
+        for kw in legal_keywords:
+            if kw in nodes_str:
+                keywords.append(kw)
+        
+        for kw in market_keywords:
+            if kw in nodes_str:
+                keywords.append(kw)
+        
+        return list(set(keywords))[:5]
+    
+    def visualize_communities(
+        self, 
+        output_path: str = "communities.png",
+        figsize: tuple = (12, 8)
+    ) -> Optional[str]:
+        """
+        Visualizacion de comunidades para debug/dashboard.
+        
+        Args:
+            output_path: Path para guardar la imagen
+            figsize: Tamano de la figura
+            
+        Returns:
+            Path de la imagen o None si falla
+        """
+        if not self._graph or len(self._graph.nodes) < 2:
+            logger.warning("Not enough nodes to visualize")
+            return None
+        
+        try:
+            import matplotlib.pyplot as plt
+            import networkx as nx
+            
+            plt.figure(figsize=figsize)
+            
+            # Layout
+            pos = nx.spring_layout(self._graph, k=2, iterations=50)
+            
+            # Communities
+            partition = nx.get_node_attributes(self._graph, 'community')
+            if not partition:
+                self.run_louvain_clustering()
+                partition = nx.get_node_attributes(self._graph, 'community')
+            
+            colors = [partition.get(n, 0) for n in self._graph.nodes()]
+            
+            # Draw
+            nx.draw_networkx_nodes(
+                self._graph, pos, 
+                node_color=colors, 
+                cmap=plt.cm.rainbow, 
+                node_size=500,
+                alpha=0.8
+            )
+            nx.draw_networkx_edges(
+                self._graph, pos, 
+                alpha=0.3,
+                edge_color='gray'
+            )
+            nx.draw_networkx_labels(
+                self._graph, pos, 
+                font_size=6,
+                font_weight='bold'
+            )
+            
+            plt.title(f"Solvens Knowledge Graph - {len(self.communities) if hasattr(self, 'communities') else 0} Communities")
+            plt.axis('off')
+            plt.tight_layout()
+            plt.savefig(output_path, dpi=150, bbox_inches='tight')
+            plt.close()
+            
+            logger.info(f"Communities visualized: {output_path}")
+            return output_path
+            
+        except ImportError:
+            logger.warning("matplotlib not installed. Run: pip install matplotlib")
+            return None
+        except Exception as e:
+            logger.error(f"Visualization failed: {e}")
+            return None
+    
+    def enrich_dag_with_communities(self, dag: Any) -> Dict[str, Any]:
+        """
+        Enriquece Cosmos DAG con informacion de comunidades.
+        
+        Cada nodo del DAG obtiene metadata de su cluster.
+        
+        Args:
+            dag: CosmosDAG a enriquecer
+            
+        Returns:
+            Dict con informacion del enrichment
+        """
+        if not hasattr(self, 'communities') or not self.communities:
+            self.run_louvain_clustering()
+        
+        enriched = 0
+        
+        if hasattr(dag, 'nodes'):
+            for node_id, node in dag.nodes.items():
+                # Encontrar comunidad
+                community_id = None
+                for cid, nodes in self.communities.items():
+                    if node_id in nodes:
+                        community_id = cid
+                        break
+                
+                if community_id is not None:
+                    if not hasattr(node, 'properties'):
+                        node.properties = {}
+                    
+                    node.properties['community_id'] = community_id
+                    node.properties['community_size'] = len(self.communities[community_id])
+                    node.properties['cluster_keywords'] = self._extract_cluster_keywords(
+                        self.communities[community_id]
+                    )
+                    enriched += 1
+        
+        logger.info(f"DAG enriched with {enriched} community assignments")
+        
+        return {
+            "enriched_nodes": enriched,
+            "total_communities": len(self.communities) if hasattr(self, 'communities') else 0
+        }
+    
+    def suggest_sub_agents(self) -> List[Dict[str, Any]]:
+        """
+        Sugiere sub-agents basados en clusters.
+        
+        Returns:
+            Lista de sub-agent suggestions con config
+        """
+        summaries = self.get_community_summary()
+        
+        suggestions = []
+        
+        for summary in summaries:
+            # Solo clusters significativos
+            if summary['size'] < 3:
+                continue
+            
+            suggestion = {
+                "name": f"{summary['keywords'][0] if summary['keywords'] else 'Agent'}_Cluster_{summary['community_id']}",
+                "community_id": summary['community_id'],
+                "size": summary['size'],
+                "keywords": summary['keywords'],
+                "nodes": summary['nodes'],
+                "specialization": self._infer_specialization(summary),
+                "estimated_tasks_per_week": summary['size'] * 10
+            }
+            
+            suggestions.append(suggestion)
+        
+        return suggestions
+    
+    def _infer_specialization(self, summary: Dict) -> str:
+        """
+        Infiere especializacion del cluster.
+        
+        Args:
+            summary: Community summary
+            
+        Returns:
+            String de especializacion
+        """
+        keywords = summary.get('keywords', [])
+        
+        if 'legal' in keywords or 'court' in keywords or 'boe' in keywords:
+            return "Legal Analysis"
+        elif 'market' in keywords or 'sales' in keywords:
+            return "Market Intelligence"
+        elif 'ai' in keywords or 'tech' in keywords:
+            return "Technical Research"
+        elif 'financial' in keywords or 'revenue' in keywords:
+            return "Financial Analysis"
+        else:
+            return "General Purpose"
+    
+    # ============================================================
     # LLM-POWERED METHODS (via router)
     # ============================================================
     
