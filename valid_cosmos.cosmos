@@ -1,0 +1,21 @@
+universe "test_universe" {
+    metadata {
+        version: "0.4.5-rc1"
+        author: "Luis Alberto Burciaga Miker"
+        standard: "Cosmos IR v0.4.5"
+    }
+    sun Sol
+    galaxy "MilkyWay" Galaxy_A {
+        position: (0, 0)
+        planet "Earth" Earth_Orbit {
+            position: (1, 0)
+            mass: 100
+        }
+    }
+    light {
+        from: Sol
+        to: Earth_Orbit
+        flow: Primary
+        restringido_hasta: 2027-01-01
+    }
+}
