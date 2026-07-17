@@ -1,0 +1,12 @@
+Cosmos Compiler
+Copyright 2026 Solvens Amoris / Cosmos Labs
+
+This product includes software developed by Solvens Amoris.
+
+Licensed under Apache License 2.0.
+
+Commercial features require license key.
+For commercial licensing: sales@solvens.amoris
+
+Telemetry: Anonymous usage metrics are collected by default.
+To opt out: export COSMOS_TELEMETRY=0

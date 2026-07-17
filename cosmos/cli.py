@@ -12,6 +12,9 @@ Commands:
 - cosmos export-audit [--format=json] [--last=N]
 - cosmos validate <file>
 - cosmos benchmark [--files=N]
+- cosmos license
+- cosmos activate <key>
+- cosmos metrics
 
 EXPORT SCHEMA v1.0
 ===================
@@ -20,7 +23,9 @@ Use `cosmos export-audit` to generate JSON for external AI consumption.
 Usage:
     pip install cosmos-compiler
     cosmos compile myfile.cosmos --strict
-    cosmos export-audit --format=json --last=100 > audit_for_external_ai.json
+    cosmos export-audit --format=json --last=100 > audit.json
+    cosmos license
+    cosmos metrics
 
 Autor: Luis Alberto Burciaga Miker
 Version: 0.4.5-rc1
@@ -36,6 +41,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import click
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -47,9 +53,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from cosmos.solvens_agent import CosmosCompilerAgent, Status, ErrorCode
 from cosmos.explainer import LLMExplainerAgent, ErrorContext, OutputFormat
+from cosmos.license import LicenseManager
+from cosmos.telemetry import Telemetry
 
 app = typer.Typer(name="cosmos", help="Cosmos DSL Compiler")
 console = Console()
+
+# Initialize managers
+license_manager = LicenseManager()
+telemetry = Telemetry()
 
 
 # ============================================================
@@ -89,7 +101,6 @@ class AuditStore:
     
     def add(self, audit: Dict):
         self.audits.append(audit)
-        # Keep only last 10000
         if len(self.audits) > 10000:
             self.audits = self.audits[-10000:]
     
@@ -233,6 +244,12 @@ def compile(
     
     # Store audit
     audit_store.add(audit_record)
+    
+    # Track telemetry
+    if result.status == Status.APPROVED:
+        telemetry.track("compile_success", files=1, duration_ms=round(duration_ms, 2))
+    else:
+        telemetry.track("compile_e401", files=1, duration_ms=round(duration_ms, 2), error_code=result.metadata.get("error_code", "UNKNOWN"))
     
     # Output
     if json_output:
@@ -551,17 +568,83 @@ def version():
         "[bold cyan]Cosmos DSL Compiler[/bold cyan]\n\n"
         "Version: 0.4.5-rc1\n"
         "Author: Luis Alberto Burciaga Miker\n"
-        "License: MIT\n\n"
+        "License: Apache 2.0 (free) / Commercial\n\n"
         "[bold]RFC-0004-F Compliant[/bold]\n"
         "E401 (TemporalConstraintViolation) - Fail-Fast\n\n"
         "[bold]Commands:[/bold]\n"
-        "  compile     - Compile a Cosmos file\n"
-        "  validate    - Validate a Cosmos file\n"
-        "  explain     - Explain compilation result\n"
+        "  compile      - Compile a Cosmos file\n"
+        "  validate     - Validate a Cosmos file\n"
+        "  explain      - Explain compilation result\n"
         "  export-audit - Export audit for external AI\n"
-        "  benchmark   - Run performance benchmark\n"
-        "  version     - Show version"
+        "  benchmark    - Run performance benchmark\n"
+        "  license      - Show license status\n"
+        "  activate     - Activate commercial license\n"
+        "  metrics      - Show usage metrics\n"
+        "  version      - Show version"
     ))
+
+
+@app.command()
+def license():
+    """Show license status."""
+    print_header("Cosmos License")
+    
+    l = license_manager.check()
+    
+    console.print(f"\n[bold]Tier:[/bold] {l['tier'].upper()}")
+    console.print(f"[bold]Status:[/bold] {'Valid' if l['valid'] else 'Invalid/Expired'}")
+    console.print(f"[bold]Features:[/bold] {', '.join(l['features'])}")
+    
+    if l.get("expires"):
+        from datetime import datetime
+        expires = datetime.fromtimestamp(l["expires"])
+        console.print(f"[bold]Expires:[/bold] {expires.strftime('%Y-%m-%d')}")
+    
+    console.print(f"\n[dim]{l['message']}[/dim]")
+    
+    if l["tier"] == "free":
+        console.print("\n[yellow]Commercial features:[/yellow]")
+        console.print("  SSO, Advanced Audit, Priority Support, SLA")
+        console.print("\n[dim]Activate: cosmos activate COSMOS-COMM-XXXX[/dim]")
+
+
+@app.command()
+@click.argument('key')
+def activate(key: str):
+    """Activate commercial license key.
+    
+    Examples:
+        cosmos activate COSMOS-COMM-ABC123
+    """
+    print_header("Activating License")
+    
+    if license_manager.activate(key):
+        print_success("License activated successfully!")
+        console.print("\nCommercial features enabled:")
+        for feature in ["sso", "audit", "priority", "sla"]:
+            console.print(f"  ✓ {feature}")
+    else:
+        print_error("Invalid license key")
+        console.print("Key must start with: COSMOS-COMM-")
+
+
+@app.command()
+def metrics():
+    """Show anonymous usage metrics."""
+    print_header("Cosmos Usage Metrics")
+    
+    m = telemetry.get_metrics()
+    
+    console.print(f"\n[bold]Usage Statistics:[/bold]")
+    console.print(f"  Total Compiles: {m['total_compiles']}")
+    console.print(f"  E401 Errors: {m['total_e401']}")
+    console.print(f"  Cache Hit Rate: {m['cache_hit_rate']:.1%}")
+    console.print(f"  Unique Users: {m['unique_users']}")
+    console.print(f"  Avg Compile Time: {m['avg_compile_ms']:.2f}ms")
+    console.print(f"  Total Events: {m['total_events']}")
+    
+    console.print(f"\n[dim]Telemetry: {'Enabled' if telemetry.enabled else 'Disabled'}[/dim]")
+    console.print("[dim]Disable: export COSMOS_TELEMETRY=0[/dim]")
 
 
 # ============================================================
