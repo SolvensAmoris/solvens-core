@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cosmos Engine - Pricing</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0a0a0f;
+            color: #f0f0f5;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        
+        h1 {
+            font-size: 48px;
+            text-align: center;
+            margin-bottom: 16px;
+            background: linear-gradient(135deg, #fff, #6366f1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle { text-align: center; color: #8888a0; margin-bottom: 48px; font-size: 18px; }
+        
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            border-radius: 100px;
+            font-size: 13px;
+            color: #22c55e;
+            margin: 0 auto 32px;
+        }
+        
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+            margin-bottom: 48px;
+        }
+        
+        .pricing-card {
+            background: #12121a;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 20px;
+            padding: 32px;
+            position: relative;
+        }
+        
+        .pricing-card.featured {
+            border-color: #6366f1;
+            box-shadow: 0 0 40px rgba(99, 102, 241, 0.2);
+        }
+        
+        .pricing-card.featured::before {
+            content: 'MOST POPULAR';
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #6366f1;
+            color: white;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 16px;
+            border-radius: 100px;
+        }
+        
+        .tier-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #8888a0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        
+        .price {
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
+            margin-bottom: 8px;
+        }
+        
+        .price-amount {
+            font-size: 56px;
+            font-weight: 800;
+        }
+        
+        .price-period {
+            color: #5a5a70;
+        }
+        
+        .price-note {
+            font-size: 13px;
+            color: #5a5a70;
+            margin-bottom: 24px;
+        }
+        
+        .limits {
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .limit-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        
+        .limit-item:last-child { border-bottom: none; }
+        .limit-value { color: #6366f1; font-weight: 600; }
+        
+        .features {
+            list-style: none;
+            margin-bottom: 24px;
+        }
+        
+        .features li {
+            padding: 8px 0;
+            color: #8888a0;
+            font-size: 14px;
+        }
+        
+        .features li::before {
+            content: '✓ ';
+            color: #22c55e;
+            margin-right: 8px;
+        }
+        
+        .cta {
+            display: block;
+            width: 100%;
+            padding: 16px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            text-align: center;
+            text-decoration: none;
+            cursor: pointer;
+            border: none;
+        }
+        
+        .cta-primary {
+            background: #6366f1;
+            color: white;
+        }
+        
+        .cta-secondary {
+            background: transparent;
+            color: #f0f0f5;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .cta:hover { transform: translateY(-2px); }
+        
+        .comparison {
+            background: #12121a;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 20px;
+            padding: 32px;
+            margin-bottom: 32px;
+        }
+        
+        .comparison h2 {
+            font-size: 24px;
+            margin-bottom: 24px;
+        }
+        
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .comparison-table th,
+        .comparison-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        
+        .comparison-table th {
+            color: #8888a0;
+            font-weight: 500;
+        }
+        
+        .comparison-table td {
+            color: #f0f0f5;
+        }
+        
+        .check { color: #22c55e; }
+        .x { color: #5a5a70; }
+        
+        .footer {
+            text-align: center;
+            padding: 40px 0;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            color: #5a5a70;
+        }
+        
+        .footer a { color: #6366f1; text-decoration: none; }
+        .footer a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Simple, Transparent Pricing</h1>
+        <p class="subtitle">Production-hardened AI agent execution. Scale without limits.</p>
+        
+        <div class="badge">
+            <span>⚡</span>
+            <span>Production Hardened: Rate Limiting + Circuit Breaker + Auto-scaling</span>
+        </div>
+        
+        <div class="pricing-grid">
+            <!-- FREE TIER -->
+            <div class="pricing-card">
+                <div class="tier-name">Free</div>
+                <div class="price">
+                    <span class="price-amount">$0</span>
+                    <span class="price-period">/month</span>
+                </div>
+                <div class="price-note">Forever free</div>
+                
+                <div class="limits">
+                    <div class="limit-item">
+                        <span>Max Concurrent</span>
+                        <span class="limit-value">5 tasks</span>
+                    </div>
+                    <div class="limit-item">
+                        <span>Rate Limit</span>
+                        <span class="limit-value">20/min</span>
+                    </div>
+                    <div class="limit-item">
+                        <span>Monthly Tasks</span>
+                        <span class="limit-value">100</span>
+                    </div>
+                </div>
+                
+                <ul class="features">
+                    <li>Core Engine</li>
+                    <li>Local execution</li>
+                    <li>Community support</li>
+                    <li>Basic analytics</li>
+                </ul>
+                
+                <button class="cta cta-secondary" onclick="selectTier('free')">Get Started Free</button>
+            </div>
+            
+            <!-- PRO TIER -->
+            <div class="pricing-card featured">
+                <div class="tier-name">Pro</div>
+                <div class="price">
+                    <span class="price-amount">$49</span>
+                    <span class="price-period">/month</span>
+                </div>
+                <div class="price-note">Billed monthly, cancel anytime</div>
+                
+                <div class="limits">
+                    <div class="limit-item">
+                        <span>Max Concurrent</span>
+                        <span class="limit-value">20 tasks</span>
+                    </div>
+                    <div class="limit-item">
+                        <span>Rate Limit</span>
+                        <span class="limit-value">300/min</span>
+                    </div>
+                    <div class="limit-item">
+                        <span>Monthly Tasks</span>
+                        <span class="limit-value">Unlimited</span>
+                    </div>
+                </div>
+                
+                <ul class="features">
+                    <li>Everything in Free</li>
+                    <li>Cloud execution</li>
+                    <li>Priority support</li>
+                    <li>5 team members</li>
+                    <li>API access</li>
+                    <li>Advanced analytics</li>
+                </ul>
+                
+                <button class="cta cta-primary" onclick="selectTier('pro')">Start Pro Trial</button>
+            </div>
+            
+            <!-- ENTERPRISE TIER -->
+            <div class="pricing-card">
+                <div class="tier-name">Enterprise</div>
+                <div class="price">
+                    <span class="price-amount">$299</span>
+                    <span class="price-period">/month</span>
+                </div>
+                <div class="price-note">For teams at scale</div>
+                
+                <div class="limits">
+                    <div class="limit-item">
+                        <span>Max Concurrent</span>
+                        <span class="limit-value">100 tasks</span>
+                    </div>
+                    <div class="limit-item">
+                        <span>Rate Limit</span>
+                        <span class="limit-value">2000/min</span>
+                    </div>
+                    <div class="limit-item">
+                        <span>Monthly Tasks</span>
+                        <span class="limit-value">Unlimited</span>
+                    </div>
+                </div>
+                
+                <ul class="features">
+                    <li>Everything in Pro</li>
+                    <li>Unlimited team</li>
+                    <li>SLA guarantee</li>
+                    <li>Custom integrations</li>
+                    <li>Dedicated support</li>
+                    <li>On-premise option</li>
+                    <li>SSO/SAML</li>
+                </ul>
+                
+                <button class="cta cta-secondary" onclick="selectTier('enterprise')">Contact Sales</button>
+            </div>
+        </div>
+        
+        <!-- COMPARISON TABLE -->
+        <div class="comparison">
+            <h2>Feature Comparison</h2>
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Feature</th>
+                        <th>Free</th>
+                        <th>Pro</th>
+                        <th>Enterprise</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Max Concurrent Tasks</td>
+                        <td>5</td>
+                        <td>20</td>
+                        <td>100</td>
+                    </tr>
+                    <tr>
+                        <td>Rate Limit (req/min)</td>
+                        <td>20</td>
+                        <td>300</td>
+                        <td>2000</td>
+                    </tr>
+                    <tr>
+                        <td>Monthly Tasks</td>
+                        <td>100</td>
+                        <td>Unlimited</td>
+                        <td>Unlimited</td>
+                    </tr>
+                    <tr>
+                        <td>Cloud Execution</td>
+                        <td class="x">✗</td>
+                        <td class="check">✓</td>
+                        <td class="check">✓</td>
+                    </tr>
+                    <tr>
+                        <td>Analytics Dashboard</td>
+                        <td>Basic</td>
+                        <td>Advanced</td>
+                        <td>Custom</td>
+                    </tr>
+                    <tr>
+                        <td>Team Members</td>
+                        <td>1</td>
+                        <td>5</td>
+                        <td>Unlimited</td>
+                    </tr>
+                    <tr>
+                        <td>API Access</td>
+                        <td class="x">✗</td>
+                        <td class="check">✓</td>
+                        <td class="check">✓</td>
+                    </tr>
+                    <tr>
+                        <td>SLA Guarantee</td>
+                        <td class="x">✗</td>
+                        <td class="x">✗</td>
+                        <td class="check">✓</td>
+                    </tr>
+                    <tr>
+                        <td>On-premise Option</td>
+                        <td class="x">✗</td>
+                        <td class="x">✗</td>
+                        <td class="check">✓</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- HARDENING INFO -->
+        <div class="comparison">
+            <h2>⚡ Production Hardened</h2>
+            <p style="color: #8888a0; margin-bottom: 16px;">
+                Every tier includes production-ready infrastructure:
+            </p>
+            <ul style="list-style: none; color: #8888a0;">
+                <li style="padding: 8px 0;">✓ <strong>Rate Limiting</strong> — Token bucket ensures you never exceed limits</li>
+                <li style="padding: 8px 0;">✓ <strong>Circuit Breaker</strong> — Automatic recovery from provider failures</li>
+                <li style="padding: 8px 0;">✓ <strong>Auto-scaling</strong> — Alerts when approaching limits</li>
+                <li style="padding: 8px 0;">✓ <strong>Usage Tracking</strong> — Full visibility into your consumption</li>
+                <li style="padding: 8px 0;">✓ <strong>Backpressure</strong> — Graceful degradation under load</li>
+            </ul>
+        </div>
+        
+        <div class="footer">
+            <p>Questions? <a href="mailto:support@cosmosengine.ai">Contact us</a></p>
+            <p style="margin-top: 16px;">© 2025 Solvens Amoris</p>
+        </div>
+    </div>
+    
+    <script>
+        function selectTier(tier) {
+            // Store selection and redirect
+            localStorage.setItem('selected_tier', tier);
+            
+            if (tier === 'free') {
+                window.location.href = '/signup?plan=free';
+            } else if (tier === 'pro') {
+                window.location.href = '/checkout?plan=pro';
+            } else {
+                window.location.href = 'mailto:enterprise@cosmosengine.ai';
+            }
+        }
+    </script>
+</body>
+</html>
