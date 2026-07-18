@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cosmos Engine - AI Agents That Actually Execute</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0a0a0f;
+            color: #f0f0f5;
+            line-height: 1.6;
+        }
+        
+        /* NAV */
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 40px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .logo { font-size: 24px; font-weight: 800; color: #fff; }
+        .logo span { color: #6366f1; }
+        .nav-links { display: flex; gap: 24px; }
+        .nav-links a { color: #8888a0; text-decoration: none; transition: color 0.2s; }
+        .nav-links a:hover { color: #fff; }
+        .btn {
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+        .btn-outline { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,0.2); }
+        .btn-outline:hover { border-color: #fff; }
+        .btn-primary { background: #6366f1; color: white; }
+        .btn-primary:hover { background: #5558e3; transform: translateY(-1px); }
+        
+        /* HERO */
+        .hero {
+            text-align: center;
+            padding: 80px 20px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .badge {
+            display: inline-block;
+            padding: 6px 16px;
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            border-radius: 100px;
+            font-size: 13px;
+            color: #22c55e;
+            margin-bottom: 24px;
+        }
+        h1 {
+            font-size: 56px;
+            font-weight: 800;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #fff, #6366f1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle {
+            font-size: 20px;
+            color: #8888a0;
+            margin-bottom: 40px;
+            max-width: 700px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .cta-group { display: flex; gap: 16px; justify-content: center; }
+        .cta-group .btn { padding: 14px 32px; font-size: 16px; }
+        
+        /* FEATURES */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+            padding: 60px 40px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .feature {
+            background: #12121a;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 32px;
+        }
+        .feature-icon { font-size: 40px; margin-bottom: 16px; }
+        .feature h3 { font-size: 20px; margin-bottom: 8px; }
+        .feature p { color: #8888a0; font-size: 15px; }
+        
+        /* PRICING */
+        .pricing {
+            padding: 60px 40px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .pricing h2 { text-align: center; font-size: 36px; margin-bottom: 40px; }
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+        }
+        .price-card {
+            background: #12121a;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 32px;
+            text-align: center;
+        }
+        .price-card.featured {
+            border-color: #6366f1;
+            box-shadow: 0 0 40px rgba(99, 102, 241, 0.15);
+        }
+        .price-card h3 { font-size: 18px; margin-bottom: 8px; color: #8888a0; }
+        .price { font-size: 48px; font-weight: 800; margin: 16px 0; }
+        .price span { font-size: 16px; color: #5a5a70; }
+        .limits-list { list-style: none; margin: 24px 0; text-align: left; }
+        .limits-list li { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .limits-list li::before { content: '✓ '; color: #22c55e; }
+        
+        /* DEMO */
+        .demo {
+            padding: 60px 40px;
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        .demo h2 { font-size: 32px; margin-bottom: 24px; }
+        .code-block {
+            background: #0d0d14;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: left;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 14px;
+            overflow-x: auto;
+        }
+        .code-block .keyword { color: #c678dd; }
+        .code-block .string { color: #98c379; }
+        .code-block .func { color: #61afef; }
+        .code-block .comment { color: #5c6370; }
+        
+        /* SIGNUP FORM */
+        .signup-form {
+            max-width: 400px;
+            margin: 40px auto;
+            background: #12121a;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 32px;
+        }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; margin-bottom: 8px; color: #8888a0; }
+        .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            background: #0a0a0f;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 16px;
+        }
+        .form-group input:focus { outline: none; border-color: #6366f1; }
+        .form-error { color: #ef4444; font-size: 14px; margin-top: 8px; display: none; }
+        
+        /* FOOTER */
+        footer {
+            text-align: center;
+            padding: 40px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            color: #5a5a70;
+        }
+        
+        /* RESPONSIVE */
+        @media (max-width: 768px) {
+            h1 { font-size: 36px; }
+            .cta-group { flex-direction: column; }
+            nav { flex-direction: column; gap: 16px; }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="logo">Cosmos<span>Engine</span></div>
+        <div class="nav-links">
+            <a href="#features">Features</a>
+            <a href="#pricing">Pricing</a>
+            <a href="#docs">Docs</a>
+        </div>
+        <button class="btn btn-outline" onclick="showLogin()">Login</button>
+    </nav>
+    
+    <section class="hero">
+        <div class="badge">⚡ Production Hardened — Rate Limiting + Circuit Breaker</div>
+        <h1>AI Agents That Actually Execute</h1>
+        <p class="subtitle">
+            Not another orchestration framework promise. Cosmos Engine decomposes your tasks, 
+            schedules them with DAG precision, and executes them. With production hardening built in.
+        </p>
+        <div class="cta-group">
+            <button class="btn btn-primary" onclick="showSignup()">Start Free</button>
+            <button class="btn btn-outline" onclick="scrollTo('#pricing')">View Pricing</button>
+        </div>
+    </section>
+    
+    <section class="features" id="features">
+        <div class="feature">
+            <div class="feature-icon">🧠</div>
+            <h3>LLM Task Decomposition</h3>
+            <p>Describe your goal. Cosmos breaks it into executable steps using LLM-powered planning.</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">📊</div>
+            <h3>DAG-Aware Scheduling</h3>
+            <p>Tasks execute in parallel where possible, respecting dependencies. Maximum efficiency.</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">⚡</div>
+            <h3>Production Hardened</h3>
+            <p>Rate limiting you can trust. Circuit breakers that work. Auto-scaling alerts.</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">💰</div>
+            <h3>Usage-Based Pricing</h3>
+            <p>Pay for what you use. Free tier included. Upgrade when you need more.</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">🔌</div>
+            <h3>Tool Registry</h3>
+            <p>Register any tool. Cosmos executes it with retry logic and error handling.</p>
+        </div>
+        <div class="feature">
+            <div class="feature-icon">📝</div>
+            <h3>Full Audit Trail</h3>
+            <p>Every step logged. Every decision traced. Debug with confidence.</p>
+        </div>
+    </section>
+    
+    <section class="demo">
+        <h2>3 Lines to Execute</h2>
+        <div class="code-block">
+<span class="keyword">from</span> cosmos <span class="keyword">import</span> Engine
+
+<span class="comment"># Define your task</span>
+result = <span class="keyword">await</span> Engine().run(<span class="string">"Build a SaaS app"</span>)
+
+<span class="comment"># Cosmos handles the rest</span>
+<span class="comment"># → Plan → Schedule → Execute → Result</span>
+        </div>
+    </section>
+    
+    <section class="pricing" id="pricing">
+        <h2>Simple, Transparent Pricing</h2>
+        <div class="pricing-grid">
+            <div class="price-card">
+                <h3>FREE</h3>
+                <div class="price">$0<span>/mo</span></div>
+                <ul class="limits-list">
+                    <li>5 concurrent tasks</li>
+                    <li>20 requests/min</li>
+                    <li>100 tasks/month</li>
+                    <li>Basic analytics</li>
+                </ul>
+                <button class="btn btn-outline" style="width:100%" onclick="signup('free')">Get Started</button>
+            </div>
+            <div class="price-card featured">
+                <h3>PRO</h3>
+                <div class="price">$49<span>/mo</span></div>
+                <ul class="limits-list">
+                    <li>20 concurrent tasks</li>
+                    <li>300 requests/min</li>
+                    <li>Unlimited tasks</li>
+                    <li>Advanced analytics</li>
+                    <li>Priority support</li>
+                </ul>
+                <button class="btn btn-primary" style="width:100%" onclick="checkout('pro')">Start Pro</button>
+            </div>
+            <div class="price-card">
+                <h3>ENTERPRISE</h3>
+                <div class="price">$299<span>/mo</span></div>
+                <ul class="limits-list">
+                    <li>100 concurrent tasks</li>
+                    <li>2000 requests/min</li>
+                    <li>Unlimited tasks</li>
+                    <li>Custom integrations</li>
+                    <li>Dedicated support</li>
+                </ul>
+                <button class="btn btn-outline" style="width:100%" onclick="checkout('enterprise')">Contact Sales</button>
+            </div>
+        </div>
+    </section>
+    
+    <section class="demo" id="signup-section" style="display:none">
+        <h2 id="form-title">Create Account</h2>
+        <div class="signup-form">
+            <form id="auth-form" onsubmit="handleAuth(event)">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="email" required placeholder="you@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="password" required placeholder="••••••••">
+                </div>
+                <div id="form-error" class="form-error"></div>
+                <button type="submit" class="btn btn-primary" style="width:100%" id="submit-btn">Create Account</button>
+            </form>
+            <p style="text-align:center;margin-top:16px;color:#5a5a70;font-size:14px">
+                Already have an account? <a href="#" onclick="showLogin()" style="color:#6366f1">Login</a>
+            </p>
+        </div>
+    </section>
+    
+    <footer>
+        <p>© 2025 Solvens Amoris. Built with 🔥</p>
+        <p style="margin-top:8px">
+            <a href="#" style="color:#6366f1">Documentation</a> · 
+            <a href="#" style="color:#6366f1">GitHub</a> · 
+            <a href="#" style="color:#6366f1">Support</a>
+        </p>
+    </footer>
+    
+    <script>
+        const API_BASE = '/api';
+        let authToken = localStorage.getItem('cosmos_token');
+        let isLogin = false;
+        
+        function scrollTo(selector) {
+            document.querySelector(selector).scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        function showSignup() {
+            isLogin = false;
+            document.getElementById('form-title').textContent = 'Create Account';
+            document.getElementById('submit-btn').textContent = 'Create Account';
+            document.getElementById('signup-section').style.display = 'block';
+            document.getElementById('signup-section').scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        function showLogin() {
+            isLogin = true;
+            document.getElementById('form-title').textContent = 'Login';
+            document.getElementById('submit-btn').textContent = 'Login';
+            document.getElementById('signup-section').style.display = 'block';
+            document.getElementById('signup-section').scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        async function handleAuth(e) {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorEl = document.getElementById('form-error');
+            
+            try {
+                const endpoint = isLogin ? '/auth/login' : '/auth/register';
+                const res = await fetch(API_BASE + endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password }),
+                });
+                
+                const data = await res.json();
+                
+                if (!res.ok) {
+                    errorEl.textContent = data.detail || 'Authentication failed';
+                    errorEl.style.display = 'block';
+                    return;
+                }
+                
+                // Store token and redirect
+                localStorage.setItem('cosmos_token', data.token);
+                localStorage.setItem('cosmos_user', JSON.stringify(data.user));
+                
+                alert(`Welcome ${isLogin ? 'back' : ''}! Tier: ${data.user.tier}`);
+                window.location.href = '/dashboard';
+                
+            } catch (err) {
+                errorEl.textContent = 'Network error. Please try again.';
+                errorEl.style.display = 'block';
+            }
+        }
+        
+        async function checkout(tier) {
+            if (!authToken) {
+                alert('Please create an account first');
+                showSignup();
+                return;
+            }
+            
+            try {
+                const res = await fetch(API_BASE + '/checkout', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + authToken,
+                    },
+                    body: JSON.stringify({ tier }),
+                });
+                
+                const data = await res.json();
+                
+                if (!res.ok) {
+                    alert(data.detail || 'Checkout failed');
+                    return;
+                }
+                
+                if (data.checkout_url) {
+                    // Redirect to Stripe
+                    window.location.href = data.checkout_url;
+                } else if (data.success) {
+                    // Mock mode - tier upgraded
+                    alert(`Upgraded to ${tier}! (Mock mode)`);
+                    window.location.href = '/dashboard';
+                }
+                
+            } catch (err) {
+                alert('Checkout error. Please try again.');
+            }
+        }
+        
+        async function signup(tier) {
+            showSignup();
+        }
+    </script>
+</body>
+</html>
