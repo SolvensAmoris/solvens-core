@@ -43,6 +43,7 @@ EXPECTED = {
     "e101-duplicate-id.cosmos": "E101",
     "e102-missing-metadata-field.cosmos": "E102",
     "e103-bad-reference.cosmos": "E103",
+    "e103-usa-star.cosmos": "E103",
     "e104-bad-metadata.cosmos": "E104",
     "e105-sun-receiver.cosmos": "E105",
     "e106-satellite-scope.cosmos": "E106",

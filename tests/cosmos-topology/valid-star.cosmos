@@ -1,6 +1,6 @@
-// Una Star es una constante global: se declara, no recibe flujos,
-// y un planeta puede depender de ella con usa (está exenta de las
-// reglas de galaxia y de órbita).
+// Una Star es una constante global: se declara con un valor, no recibe
+// flujos (E105) y no es objetivo válido de `usa` (E103). Existe para
+// nombrar valores fijos del sistema, no como nodo de dependencia.
 universe "ConEstrella" {
     metadata {
         version: "1.0"
@@ -21,7 +21,6 @@ universe "ConEstrella" {
             position: (25.0, 0.0)
             mass: 20
             type: Operation
-            usa @max_users
         }
     }
 }

@@ -1,0 +1,9 @@
+universe "T" {
+    metadata { version: "1.0" author: "A" standard: "Cosmos" }
+    sun Sol
+    star "C" @cstar { value: 42 }
+    galaxy "G" @g {
+        position: (50.0, 0.0)
+        planet "A" @a { position: (25.0, 0.0) mass: 20 type: Operation usa @cstar }
+    }
+}

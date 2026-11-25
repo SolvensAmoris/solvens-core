@@ -361,6 +361,8 @@ def verify_topology(ast: Dict[str, Any], strict: bool = True) -> List[CompileErr
             target = idx.nodes.get(target_id)
             if target is None:
                 errors.append(_err("E103", f"Invalid entity reference: @{target_id} does not exist (used by @{nid})", f"@{nid}", strict))
+            elif target["kind"] == "star":
+                errors.append(_err("E103", f"Invalid entity reference: @{target_id} is a Star, not a valid dependency target (used by @{nid})", f"@{nid}", strict))
     if errors:
         return errors
 
