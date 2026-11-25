@@ -1,0 +1,21 @@
+// P001: referencia sin @. La gramática exige AT_ID después de usa.
+universe "TestP001" {
+    metadata {
+        version: "1.0"
+        author: "Test"
+        standard: "Cosmos"
+    }
+
+    sun Sol
+
+    galaxy "G" @g {
+        position: (50.0, 0.0)
+
+        planet "A" @a {
+            position: (25.0, 0.0)
+            mass: 20
+            type: Operation
+            usa React
+        }
+    }
+}

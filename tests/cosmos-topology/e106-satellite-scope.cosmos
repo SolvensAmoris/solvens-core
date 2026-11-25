@@ -1,0 +1,28 @@
+// E106: el satélite queda fuera de la banda de su padre.
+// Padre en Logic (radio 25); satélite con desplazamiento (30, 0) →
+// absoluta (55, 0) → banda Interface. Masa 5 ≤ 50% de 20, así que
+// no dispara E111.
+universe "TestE106" {
+    metadata {
+        version: "1.0"
+        author: "Test"
+        standard: "Cosmos"
+    }
+
+    sun Sol
+
+    galaxy "G" @g {
+        position: (50.0, 0.0)
+
+        planet "A" @a {
+            position: (25.0, 0.0)
+            mass: 20
+            type: Operation
+
+            satellite "S" @s {
+                position: (30.0, 0.0)
+                mass: 5
+            }
+        }
+    }
+}

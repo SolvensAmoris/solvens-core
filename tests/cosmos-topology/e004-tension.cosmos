@@ -1,0 +1,112 @@
+// E004 (warning): 6 flujos en orden invertido → 15 cruces > umbral 10.
+// Planetas de la izquierda en x=-20, de la derecha en x=+20 (cartesianas).
+// Cada flujo va de un planeta izquierdo al planeta derecho opuesto,
+// así que cada par de flujos se cruza: C(6,2) = 15 cruces.
+// Todos los flujos son Operation → Compute (matriz válida) y la
+// distancia máxima es 45.2 ≤ alcance 50 (masa 20).
+universe "TestE004" {
+    metadata {
+        version: "1.0"
+        author: "Test"
+        standard: "Cosmos"
+    }
+
+    sun Sol
+
+    galaxy "G" @g {
+        position: (50.0, 0.0)
+
+        planet "L1" @l1 {
+            position: (22.3607, 2.6779)
+            mass: 20
+            type: Operation
+        }
+        planet "L2" @l2 {
+            position: (20.8806, 2.8501)
+            mass: 20
+            type: Operation
+        }
+        planet "L3" @l3 {
+            position: (20.0998, 3.0419)
+            mass: 20
+            type: Operation
+        }
+        planet "L4" @l4 {
+            position: (20.0998, -3.0419)
+            mass: 20
+            type: Operation
+        }
+        planet "L5" @l5 {
+            position: (20.8806, -2.8501)
+            mass: 20
+            type: Operation
+        }
+        planet "L6" @l6 {
+            position: (22.3607, -2.6779)
+            mass: 20
+            type: Operation
+        }
+
+        planet "R1" @r1 {
+            position: (22.8254, 0.5028)
+            mass: 100
+            type: Compute
+        }
+        planet "R2" @r2 {
+            position: (21.1896, 0.3367)
+            mass: 100
+            type: Compute
+        }
+        planet "R3" @r3 {
+            position: (20.2237, 0.1489)
+            mass: 100
+            type: Compute
+        }
+        planet "R4" @r4 {
+            position: (20.0250, -0.0500)
+            mass: 100
+            type: Compute
+        }
+        planet "R5" @r5 {
+            position: (20.6155, -0.2450)
+            mass: 100
+            type: Compute
+        }
+        planet "R6" @r6 {
+            position: (21.9317, -0.4229)
+            mass: 100
+            type: Compute
+        }
+    }
+
+    light {
+        from: @l1
+        to: @r6
+        flow: Primary
+    }
+    light {
+        from: @l2
+        to: @r5
+        flow: Primary
+    }
+    light {
+        from: @l3
+        to: @r4
+        flow: Primary
+    }
+    light {
+        from: @l4
+        to: @r3
+        flow: Primary
+    }
+    light {
+        from: @l5
+        to: @r2
+        flow: Primary
+    }
+    light {
+        from: @l6
+        to: @r1
+        flow: Primary
+    }
+}

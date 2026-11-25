@@ -1,0 +1,108 @@
+/*
+ * Sistema de Demo Completo - Cosmos v1.0 (reescritura 2026-11-25)
+ * Demuestra: Múltiples versiones, Órbitas, Restricción temporal
+ * Este ejemplo compila VALID con el compilador de referencia.
+ * Cada número está elegido para satisfacer las reglas; ver RFC-0004-F §11.1.
+ */
+
+universe "SistemaHibrido" {
+    metadata {
+        version: "1.0"
+        author: "Luis Alberto Burciaga Miker"
+        standard: "Cosmos"
+    }
+
+    // ============================================
+    // ORIGEN ÚNICO DE VERDAD
+    // ============================================
+    sun NucleoSistema
+
+    // ============================================
+    // GALAXIA: Versión Legacy (ej: React 17)
+    // ============================================
+    galaxy "LegacyCore" @galaxy_legacy {
+        position: (50.0, 0.0)
+
+        // Logic - posición 25.0, masa 20 → alcance 50.0
+        planet "ReactLegacy" @react_17_0_2 {
+            position: (25.0, 0.0)
+            mass: 20
+            type: Operation
+        }
+
+        // Interface - posición 55.0, masa 100 → alcance 10.0
+        planet "ComponenteLegacy" @comp_btn_legacy {
+            position: (55.0, 0.0)
+            mass: 100
+            type: Interface
+            usa @react_17_0_2  // Dependencia: Interface(3) → Logic(4)
+        }
+    }
+
+    // ============================================
+    // GALAXIA: Versión Moderna (ej: React 18)
+    // ============================================
+    galaxy "ModernCore" @galaxy_modern {
+        position: (75.0, 1.57)  // Separación angular de Legacy
+
+        // Logic - posición 25.0, masa 20 → alcance 50.0
+        planet "ReactModerno" @react_18_3_1 {
+            position: (25.0, 0.5)
+            mass: 20
+            type: Operation
+
+            // Satellite: posición relativa (1.0, 0.0) → absoluta (26.0, 0.5)
+            // Masa 5 ≤ 50% de 20. Hereda el contexto del padre.
+            satellite "Hook" @custom_hook {
+                position: (1.0, 0.0)
+                mass: 5
+                usa @react_18_3_1  // Usa a su propio padre
+            }
+        }
+
+        // Interface - posición 55.0, masa 100 → alcance 10.0
+        planet "ComponenteModerno" @comp_btn_modern {
+            position: (55.0, 0.5)
+            mass: 100
+            type: Interface
+            usa @react_18_3_1  // Dependencia: Interface(3) → Logic(4)
+        }
+    }
+
+    // ============================================
+    // FLUJOS: Aislamiento por dominio
+    // ============================================
+
+    // Flujo dentro de Legacy (licencia hasta 2027-12-31)
+    light {
+        from: NucleoSistema
+        to: @react_17_0_2
+        flow: Primary  // Sol → Logic, distancia 25.0 ≤ alcance 100
+        restringido_hasta: 2027-12-31
+    }
+
+    light {
+        from: @react_17_0_2
+        to: @comp_btn_legacy
+        flow: Primary  // Operation → Interface, distancia 30.0 ≤ alcance 50.0
+    }
+
+    // Flujo dentro de Modern
+    light {
+        from: NucleoSistema
+        to: @react_18_3_1
+        flow: Primary  // Sol → Logic, distancia 25.0 ≤ alcance 100
+    }
+
+    light {
+        from: @react_18_3_1
+        to: @comp_btn_modern
+        flow: Asynchronous  // Operation → Interface, distancia 30.0 ≤ alcance 50.0
+    }
+
+    light {
+        from: @react_18_3_1
+        to: @custom_hook
+        flow: Read  // Hacia satélite (exento de matriz), distancia 1.0 ≤ alcance 50.0
+    }
+}

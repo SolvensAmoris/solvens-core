@@ -1,0 +1,27 @@
+// Una Star es una constante global: se declara, no recibe flujos,
+// y un planeta puede depender de ella con usa (está exenta de las
+// reglas de galaxia y de órbita).
+universe "ConEstrella" {
+    metadata {
+        version: "1.0"
+        author: "Test"
+        standard: "Cosmos"
+    }
+
+    sun Sol
+
+    star "MaxUsers" @max_users {
+        value: 100
+    }
+
+    galaxy "G" @g {
+        position: (50.0, 0.0)
+
+        planet "A" @a {
+            position: (25.0, 0.0)
+            mass: 20
+            type: Operation
+            usa @max_users
+        }
+    }
+}

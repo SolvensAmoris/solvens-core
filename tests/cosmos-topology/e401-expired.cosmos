@@ -1,0 +1,27 @@
+// E401: flujo con restringido_hasta vencido (2020-01-01 < fecha real).
+universe "TestE401" {
+    metadata {
+        version: "1.0"
+        author: "Test"
+        standard: "Cosmos"
+    }
+
+    sun Sol
+
+    galaxy "G" @g {
+        position: (50.0, 0.0)
+
+        planet "A" @a {
+            position: (25.0, 0.0)
+            mass: 20
+            type: Operation
+        }
+    }
+
+    light {
+        from: Sol
+        to: @a
+        flow: Primary
+        restringido_hasta: 2020-01-01
+    }
+}

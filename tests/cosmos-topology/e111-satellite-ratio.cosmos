@@ -1,0 +1,25 @@
+// E111: masa satelital 15 > 50% de la masa del planeta (20 → máx 10).
+universe "TestE111" {
+    metadata {
+        version: "1.0"
+        author: "Test"
+        standard: "Cosmos"
+    }
+
+    sun Sol
+
+    galaxy "G" @g {
+        position: (50.0, 0.0)
+
+        planet "A" @a {
+            position: (25.0, 0.0)
+            mass: 20
+            type: Operation
+
+            satellite "S" @s {
+                position: (1.0, 0.0)
+                mass: 15
+            }
+        }
+    }
+}

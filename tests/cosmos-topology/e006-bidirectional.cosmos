@@ -1,0 +1,41 @@
+// E006: flujos A → B y B → A a la vez.
+// Nota: la matriz no tiene ningún par simétrico, así que el par
+// bidireccional también viola la matriz en una dirección (E109).
+// El test exige E006; E109 es consecuencia esperada del mismo hecho.
+universe "TestE006" {
+    metadata {
+        version: "1.0"
+        author: "Test"
+        standard: "Cosmos"
+    }
+
+    sun Sol
+
+    galaxy "G" @g {
+        position: (50.0, 0.0)
+
+        planet "A" @a {
+            position: (25.0, 0.0)
+            mass: 20
+            type: Operation
+        }
+
+        planet "B" @b {
+            position: (30.0, 0.0)
+            mass: 20
+            type: Compute
+        }
+    }
+
+    light {
+        from: @a
+        to: @b
+        flow: Primary
+    }
+
+    light {
+        from: @b
+        to: @a
+        flow: Primary
+    }
+}

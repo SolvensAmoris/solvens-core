@@ -1,75 +1,92 @@
 """
 cosmos/compiler/errors.py
-========================
+=========================
 
-Error definitions for Cosmos compiler.
-RFC-0004-F: Temporal Constraint Validation
+Canonical error catalog for the Cosmos compiler.
+RFC-0004-F (rewritten 2026-11-25), section 8.
 
-Error codes:
-- E1xx: Syntax errors
-- E2xx: Semantic errors
-- E4xx: Temporal constraint errors (RFC-0004-F)
-- E5xx: Validation errors
+One code, one meaning, everywhere. The old enum reused codes with
+different meanings (E101 was "InvalidUniverse" here and
+"DuplicateIdentifier" in the RFC; E401 was "TemporalConstraintViolation"
+here and "FlowAuthorizationExpired" in the RFC). That is gone.
+
+Codes:
+- P001-P015: parser errors (RFC-0005, as defined in cosmos-topology lib.rs)
+- E001-E007: topology errors
+- E101-E112: structural errors
+- E401, E403-E405: temporal / cycle errors
+- W001:     temporal warning (lax mode)
+- CT001-CT005: contract errors (RFC-0008)
+- C001-C010: CIR errors (reserved, RFC-0007 pending)
+- E998:     internal compiler error (not a user error)
 """
 
 from dataclasses import dataclass
 from typing import Literal
-from enum import Enum
 
 
 # ============================================================
-# ERROR CODES
+# CANONICAL CODE TABLES (name -> code)
 # ============================================================
 
-class ErrorCode(str, Enum):
-    """Códigos de error para Cosmos compiler."""
-    
-    # Syntax errors (E1xx)
-    E100 = "SyntaxError"
-    E101 = "InvalidUniverse"
-    E102 = "InvalidNodeType"
-    E103 = "UnclosedBlock"
-    E104 = "InvalidProperty"
-    
-    # Semantic errors (E2xx)
-    E200 = "DuplicateNode"
-    E201 = "UndefinedReference"
-    E202 = "CircularDependency"
-    E203 = "InvalidConnection"
-    
-    # Temporal constraint errors (E4xx) - RFC-0004-F
-    E400 = "TemporalConstraintError"
-    E401 = "TemporalConstraintViolation"  # FAIL-FAST REQUIRED
-    E402 = "TemporalCycleDetected"
-    E403 = "InvalidTemporalOrder"
-    E404 = "DurationExceeded"
-    E405 = "TemporalInconsistency"
-    
-    # Validation errors (E5xx)
-    E500 = "ValidationError"
-    E501 = "SchemaViolation"
-    E502 = "TypeMismatch"
-    
-    # Internal errors (E9xx)
-    E900 = "InternalError"
-    E901 = "CompilerError"
-    E902 = "ParserError"
+PARSER_ERRORS = {
+    "UnexpectedToken": "P001",
+    "UnexpectedEOF": "P002",
+    "MissingUniverse": "P003",
+    "MissingMetadata": "P004",
+    "MissingSun": "P005",
+    "MissingPosition": "P006",
+    "MissingMass": "P007",
+    "MissingType": "P008",
+    "InvalidIdentifier": "P009",
+    "InvalidNumber": "P010",
+    "InvalidString": "P011",
+    "SunPositionOverride": "P012",
+    "DuplicateEntity": "P013",
+    "UnknownBlock": "P014",
+    "InvalidFlowType": "P015",
+}
 
+TOPOLOGY_ERRORS = {
+    "OrbitViolation": "E001",
+    "MassCollision": "E002",
+    "LightPathTooLong": "E003",
+    "SpaghettiTensionExceeded": "E004",
+    "InvalidCoordinates": "E005",
+    "BidirectionalLightForbidden": "E006",
+    "DeepSpaceViolation": "E007",
+}
 
-# Error code constants for convenience
-E100 = ErrorCode.E100.value
-E101 = ErrorCode.E101.value
-E102 = ErrorCode.E102.value
-E103 = ErrorCode.E103.value
-E200 = ErrorCode.E200.value
-E201 = ErrorCode.E201.value
-E202 = ErrorCode.E202.value
-E400 = ErrorCode.E400.value
-E401 = ErrorCode.E401.value  # RFC-0004-F: FAIL-FAST
-E402 = ErrorCode.E402.value
-E403 = ErrorCode.E403.value
-E500 = ErrorCode.E500.value
-E501 = ErrorCode.E501.value
+STRUCTURAL_ERRORS = {
+    "DuplicateIdentifier": "E101",
+    "MissingRequiredField": "E102",
+    "InvalidEntityReference": "E103",
+    "InvalidMetadata": "E104",
+    "SunOrStarAsReceiver": "E105",
+    "SatelliteScopeViolation": "E106",
+    "GalaxyInCore": "E107",
+    "MultipleSun": "E108",
+    "FlowMatrixViolation": "E109",
+    "OrbitTypeMismatch": "E110",
+    "SatelliteMassRatioExceeded": "E111",
+    "EmptyUniverse": "E112",
+}
+
+TEMPORAL_ERRORS = {
+    "FlowAuthorizationExpired": "E401",
+    "CrossGalaxyAccess": "E403",
+    "FlowCycle": "E404",
+    "MalformedDate": "E405",
+    "TemporalAccessExpired": "W001",
+}
+
+CONTRACT_ERRORS = {
+    "ContractNotFound": "CT001",
+    "ContractMismatch": "CT002",
+    "PurityViolation": "CT003",
+    "SignatureMismatch": "CT004",
+    "ImportWithoutContract": "CT005",
+}
 
 
 # ============================================================
@@ -79,14 +96,15 @@ E501 = ErrorCode.E501.value
 @dataclass
 class CompileError:
     code: str
-    phase: Literal["PARSER", "AST", "TEMPORAL", "TOPOLOGY", "FLOW", "CYCLE", "ENGINE"]
-    severity: Literal["REJECT", "INTERNAL", "WARNING"]
+    phase: Literal["PARSER", "AST", "TOPOLOGY", "TEMPORAL"]
+    severity: Literal["REJECT", "WARNING"]
     message: str
     location: str = ""
 
 
 class InternalCompileError(Exception):
-    """Error interno del compilador. No es culpa del cosmos."""
+    """Internal compiler error. Not the user's fault (E998)."""
+
     def __init__(self, code: str, phase: str, message: str):
         self.code = code
         self.phase = phase
@@ -94,31 +112,26 @@ class InternalCompileError(Exception):
         super().__init__(f"[{code}] [{phase}] {message}")
 
 
+class ParseFailure(Exception):
+    """A parser-class failure found after Lark parsing (P-code)."""
+
+    def __init__(self, code: str, message: str, location: str = ""):
+        self.code = code
+        self.message = message
+        self.location = location
+        super().__init__(f"[{code}] {message}")
+
+
 class TemporalConstraintViolation(Exception):
     """
-    Violación de restricción temporal.
-    
-    RFC-0004-F: Fail-Fast
-    
-    Esta excepción indica una violación de las restricciones
-    temporales definidas en el código Cosmos.
+    Temporal constraint violation (E401).
+
+    RFC-0004-F section 6: a flow whose restringido_hasta has passed
+    is blocked. Kept for compatibility with GatedCosmosExecutor,
+    which raises E401Block from this code.
     """
-    def __init__(
-        self,
-        message: str,
-        start_after: int = None,
-        end_before: int = None,
-        duration: int = None,
-        details: dict = None
-    ):
-        self.error_code = E401
-        self.start_after = start_after
-        self.end_before = end_before
-        self.duration = duration
+
+    def __init__(self, message: str, details: dict | None = None):
+        self.error_code = "E401"
         self.details = details or {}
-        
-        full_message = f"[{E401}] {message}"
-        if start_after and end_before:
-            full_message += f" (start_after={start_after}, end_before={end_before})"
-        
-        super().__init__(full_message)
+        super().__init__(f"[E401] {message}")

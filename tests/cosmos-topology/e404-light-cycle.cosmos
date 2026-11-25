@@ -1,0 +1,54 @@
+// E404: ciclo de flujos A → B → C → A.
+// Nota: la matriz de tipos es un DAG, así que todo ciclo de flujos
+// incluye al menos una arista que viola la matriz (aquí Interface →
+// Operation, E109). El test exige E404; E109 es consecuencia esperada
+// del mismo hecho.
+universe "TestE404Light" {
+    metadata {
+        version: "1.0"
+        author: "Test"
+        standard: "Cosmos"
+    }
+
+    sun Sol
+
+    galaxy "G" @g {
+        position: (50.0, 0.0)
+
+        planet "A" @a {
+            position: (25.0, 0.0)
+            mass: 20
+            type: Operation
+        }
+
+        planet "B" @b {
+            position: (30.0, 0.0)
+            mass: 20
+            type: Compute
+        }
+
+        planet "C" @c {
+            position: (55.0, 0.0)
+            mass: 20
+            type: Interface
+        }
+    }
+
+    light {
+        from: @a
+        to: @b
+        flow: Primary
+    }
+
+    light {
+        from: @b
+        to: @c
+        flow: Primary
+    }
+
+    light {
+        from: @c
+        to: @a
+        flow: Primary
+    }
+}

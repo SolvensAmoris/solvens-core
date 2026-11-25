@@ -1,0 +1,10 @@
+// E112: universo sin galaxias.
+universe "TestE112" {
+    metadata {
+        version: "1.0"
+        author: "Test"
+        standard: "Cosmos"
+    }
+
+    sun Sol
+}

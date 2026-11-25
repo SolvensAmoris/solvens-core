@@ -1,0 +1,22 @@
+// P012: posición declarada para el Sol (G-001: implícita (0,0)).
+universe "TestP012" {
+    metadata {
+        version: "1.0"
+        author: "Test"
+        standard: "Cosmos"
+    }
+
+    sun Sol {
+        position: (0.0, 0.0)
+    }
+
+    galaxy "G" @g {
+        position: (50.0, 0.0)
+
+        planet "A" @a {
+            position: (25.0, 0.0)
+            mass: 20
+            type: Operation
+        }
+    }
+}

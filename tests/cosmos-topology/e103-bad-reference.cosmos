@@ -1,0 +1,26 @@
+// E103: el flujo apunta a un @id que no existe.
+universe "TestE103" {
+    metadata {
+        version: "1.0"
+        author: "Test"
+        standard: "Cosmos"
+    }
+
+    sun Sol
+
+    galaxy "G" @g {
+        position: (50.0, 0.0)
+
+        planet "A" @a {
+            position: (25.0, 0.0)
+            mass: 20
+            type: Operation
+        }
+    }
+
+    light {
+        from: Sol
+        to: @fantasma
+        flow: Primary
+    }
+}

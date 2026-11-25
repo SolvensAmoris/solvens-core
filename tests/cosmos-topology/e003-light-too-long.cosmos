@@ -1,0 +1,35 @@
+// E003: distancia 50 > alcance 10 (emisor masa 100 → 1000/100 = 10).
+// Ambos planetas en banda Logic (radio 25) y la matriz
+// Operation → Compute es válida; solo falla el alcance.
+// B está al otro lado del Sol (theta 3.14): distancia ≈ 50.
+universe "TestE003" {
+    metadata {
+        version: "1.0"
+        author: "Test"
+        standard: "Cosmos"
+    }
+
+    sun Sol
+
+    galaxy "G" @g {
+        position: (50.0, 0.0)
+
+        planet "A" @a {
+            position: (25.0, 0.0)
+            mass: 100
+            type: Operation
+        }
+
+        planet "B" @b {
+            position: (25.0, 3.14)
+            mass: 100
+            type: Compute
+        }
+    }
+
+    light {
+        from: @a
+        to: @b
+        flow: Primary
+    }
+}

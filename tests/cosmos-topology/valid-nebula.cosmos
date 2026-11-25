@@ -1,0 +1,29 @@
+// Una nebulosa agrupa planetas dentro de una galaxia. Los planetas
+// pertenecen a la galaxia, no a la nebulosa.
+universe "ConNebulosa" {
+    metadata {
+        version: "1.0"
+        author: "Test"
+        standard: "Cosmos"
+    }
+
+    sun Sol
+
+    galaxy "G" @g {
+        position: (50.0, 0.0)
+
+        nebula "N" {
+            planet "A" @a {
+                position: (25.0, 0.0)
+                mass: 20
+                type: Operation
+            }
+        }
+    }
+
+    light {
+        from: Sol
+        to: @a
+        flow: Primary
+    }
+}

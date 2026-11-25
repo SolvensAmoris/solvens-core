@@ -1,0 +1,33 @@
+// E109: Storage → Interface está prohibido por la matriz de tipos.
+// Distancia 30 ≤ alcance 50 (masa 20), así que no dispara E003.
+universe "TestE109" {
+    metadata {
+        version: "1.0"
+        author: "Test"
+        standard: "Cosmos"
+    }
+
+    sun Sol
+
+    galaxy "G" @g {
+        position: (50.0, 0.0)
+
+        planet "A" @a {
+            position: (25.0, 0.0)
+            mass: 20
+            type: Storage
+        }
+
+        planet "B" @b {
+            position: (55.0, 0.0)
+            mass: 100
+            type: Interface
+        }
+    }
+
+    light {
+        from: @a
+        to: @b
+        flow: Primary
+    }
+}

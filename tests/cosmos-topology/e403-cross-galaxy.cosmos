@@ -1,0 +1,38 @@
+// E403: flujo entre galaxias.
+// Operation → Compute es válido por matriz, distancia 12.4 ≤ alcance 50,
+// así que solo dispara E403.
+universe "TestE403" {
+    metadata {
+        version: "1.0"
+        author: "Test"
+        standard: "Cosmos"
+    }
+
+    sun Sol
+
+    galaxy "G1" @g1 {
+        position: (50.0, 0.0)
+
+        planet "A" @a {
+            position: (25.0, 0.0)
+            mass: 20
+            type: Operation
+        }
+    }
+
+    galaxy "G2" @g2 {
+        position: (75.0, 1.57)
+
+        planet "B" @b {
+            position: (25.0, 0.5)
+            mass: 20
+            type: Compute
+        }
+    }
+
+    light {
+        from: @a
+        to: @b
+        flow: Primary
+    }
+}

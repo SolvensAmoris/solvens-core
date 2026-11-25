@@ -1,0 +1,28 @@
+// E001: usa hacia afuera. Logic(4) depende de Interface(3): prohibido.
+// Las dependencias apuntan hacia adentro (órbita destino >= órbita origen).
+universe "TestE001" {
+    metadata {
+        version: "1.0"
+        author: "Test"
+        standard: "Cosmos"
+    }
+
+    sun Sol
+
+    galaxy "G" @g {
+        position: (50.0, 0.0)
+
+        planet "A" @a {
+            position: (25.0, 0.0)
+            mass: 20
+            type: Operation
+            usa @b
+        }
+
+        planet "B" @b {
+            position: (55.0, 0.0)
+            mass: 100
+            type: Interface
+        }
+    }
+}

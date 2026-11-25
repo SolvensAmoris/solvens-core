@@ -1,0 +1,30 @@
+// E404: ciclo de dependencias A → B → A.
+// Ambas en banda Logic, así que la regla de usa no dispara E001:
+// el ciclo es el único error.
+universe "TestE404Usa" {
+    metadata {
+        version: "1.0"
+        author: "Test"
+        standard: "Cosmos"
+    }
+
+    sun Sol
+
+    galaxy "G" @g {
+        position: (50.0, 0.0)
+
+        planet "A" @a {
+            position: (25.0, 0.0)
+            mass: 20
+            type: Operation
+            usa @b
+        }
+
+        planet "B" @b {
+            position: (30.0, 0.0)
+            mass: 20
+            type: Compute
+            usa @a
+        }
+    }
+}
