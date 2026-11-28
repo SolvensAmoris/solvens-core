@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import timezone, datetime
 from typing import Any, Awaitable, Callable, TypeVar, TYPE_CHECKING
-import socket
 
 import structlog
 
@@ -28,6 +28,7 @@ from solvens.core.types import (
     TaskStatus,
 )
 from solvens.router.router import CapabilityRouter
+
 if TYPE_CHECKING:
     from solvens.persistence.worker import DurableTaskWorker
 
