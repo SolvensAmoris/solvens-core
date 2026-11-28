@@ -232,6 +232,9 @@ async def test_cancel_queued_task_and_running_task(db):
         handler_name="test.slow",
         payload={},
     )
+    assert not await worker.cancel_task(
+        task_id=queued_id, tenant_id=tenant_id, user_id="not-owner"
+    )
     assert await worker.cancel_task(
         task_id=queued_id, tenant_id=tenant_id, user_id=user_id
     )
