@@ -182,7 +182,7 @@ async def websocket_endpoint(websocket: WebSocket, run_id: str, ticket: str = Qu
     if (
         run is None
         or run.tenant_id != principal.tenant_id
-        or (run.user_id is not None and run.user_id != principal.user_id)
+        or run.user_id != principal.user_id
     ):
         await websocket.close(code=4404)
         return
@@ -251,7 +251,7 @@ async def get_run(run_id: str, principal: Principal = Depends(require_principal)
     if (
         run_id not in runs
         or runs[run_id].tenant_id != principal.tenant_id
-        or (runs[run_id].user_id is not None and runs[run_id].user_id != principal.user_id)
+        or runs[run_id].user_id != principal.user_id
     ):
         raise HTTPException(status_code=404, detail="Run not found")
     return get_run_dag(run_id)
@@ -263,7 +263,7 @@ async def get_run_metrics(run_id: str, principal: Principal = Depends(require_pr
     if (
         run_id not in runs
         or runs[run_id].tenant_id != principal.tenant_id
-        or (runs[run_id].user_id is not None and runs[run_id].user_id != principal.user_id)
+        or runs[run_id].user_id != principal.user_id
     ):
         raise HTTPException(status_code=404, detail="Run not found")
     run = runs[run_id]
