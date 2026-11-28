@@ -18,7 +18,7 @@ from solvens.core.config import get_settings
 from solvens.core.exceptions import SolvensError
 from solvens.core.types import Message, MessageRole, TaskPriority, TaskStatus
 from solvens.router import CapabilityRouter
-from security.oidc import Principal, require_principal
+from security.oidc import Principal, require_principal, require_role
 
 
 # === Request/Response Models ===
@@ -172,6 +172,7 @@ async def chat(request: ChatRequest, principal: Principal = Depends(require_prin
     
     The request will be routed to the optimal provider based on content analysis.
     """
+    require_role(principal, "developer", "editor", "admin", "owner")
     if not router:
         raise HTTPException(status_code=503, detail="Router not initialized")
     
@@ -197,6 +198,7 @@ async def chat_stream(request: ChatRequest, principal: Principal = Depends(requi
     
     Note: Requires a provider that supports streaming.
     """
+    require_role(principal, "developer", "editor", "admin", "owner")
     # TODO: Implement streaming
     raise HTTPException(status_code=501, detail="Streaming not yet implemented")
 
@@ -209,6 +211,7 @@ async def create_task(request: TaskRequest, principal: Principal = Depends(requi
     
     Tasks are queued and executed by the orchestrator.
     """
+    require_role(principal, "developer", "editor", "admin", "owner")
     if not orchestrator:
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
     
