@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import structlog
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
@@ -10,15 +11,19 @@ from typing import Any, AsyncIterator
 from fastapi import FastAPI, HTTPException, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from pydantic import BaseModel, Field
 
 from solvens import __version__
-from solvens.agents.orchestrator import AgentOrchestrator
+from solvens.agents.orchestrator import AgentOrchestrator, OrchestratorConfig
 from solvens.core.config import get_settings
 from solvens.core.exceptions import SolvensError
 from solvens.core.types import Message, MessageRole, TaskPriority, TaskStatus
 from solvens.router import CapabilityRouter
 from security.oidc import Principal, require_principal, require_role
+from solvens.persistence.database import get_session_factory
+from solvens.persistence.models import CoreTaskRecord
 
 
 # === Request/Response Models ===
@@ -41,9 +46,10 @@ class ChatResponse(BaseModel):
 
 class TaskRequest(BaseModel):
     """Task creation request."""
-    description: str
+    description: str = Field(min_length=1, max_length=10000)
     priority: TaskPriority = TaskPriority.NORMAL
-    callback: str | None = None  # For future: reference to callback
+    callback: str | None = None  # Arbitrary callbacks are not executed.
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 class TaskResponse(BaseModel):
@@ -76,17 +82,61 @@ orchestrator: AgentOrchestrator | None = None
 router: CapabilityRouter | None = None
 start_time: float = 0
 task_tenants: dict[str, str] = {}
+task_users: dict[str, str] = {}
+durable_mode: bool = False
+
+
+async def _durable_echo(payload: dict[str, Any]) -> dict[str, str]:
+    """Safe built-in durable handler used by the API task endpoint."""
+    description = payload.get("description")
+    if not isinstance(description, str):
+        raise ValueError("description must be a string")
+    return {"status": "completed", "message": f"Task: {description}"}
+
+
+def _durable_task_status(value: str) -> TaskStatus:
+    return {
+        "queued": TaskStatus.PENDING,
+        "pending": TaskStatus.PENDING,
+        "running": TaskStatus.RUNNING,
+        "completed": TaskStatus.COMPLETED,
+        "failed": TaskStatus.FAILED,
+        "cancel_requested": TaskStatus.CANCELLED,
+        "cancelled": TaskStatus.CANCELLED,
+    }.get(value, TaskStatus.FAILED)
+
+
+def _durable_task_description(record: CoreTaskRecord) -> str:
+    envelope = record.payload or {}
+    if not isinstance(envelope, dict):
+        return ""
+    input_payload = envelope.get("input", {})
+    description = input_payload.get("description", "") if isinstance(input_payload, dict) else ""
+    return description if isinstance(description, str) else ""
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler."""
-    global orchestrator, router, start_time
+    global orchestrator, router, start_time, durable_mode
     import time
     start_time = time.time()
     
     # Initialize services
-    orchestrator = AgentOrchestrator()
+    database_configured = bool(os.getenv("SOLVENS_DATABASE_URL") or os.getenv("DATABASE_URL"))
+    durable_mode = database_configured
+    durable_workers = max(0, int(os.getenv("SOLVENS_DURABLE_WORKERS", "1"))) if database_configured else 0
+    durable_lease_seconds = int(os.getenv("SOLVENS_DURABLE_LEASE_SECONDS", "60"))
+    durable_poll_interval = float(os.getenv("SOLVENS_DURABLE_POLL_INTERVAL", "1.0"))
+    orchestrator = AgentOrchestrator(
+        OrchestratorConfig(
+            durable_workers=durable_workers,
+            durable_lease_seconds=durable_lease_seconds,
+            durable_poll_interval=durable_poll_interval,
+        )
+    )
+    if durable_workers:
+        orchestrator.register_durable_handler("api.echo", _durable_echo)
     router = CapabilityRouter()
     
     await orchestrator.initialize()
@@ -101,6 +151,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await orchestrator.shutdown()
     if router:
         await router.shutdown()
+    durable_mode = False
+    task_tenants.clear()
+    task_users.clear()
+    orchestrator = None
+    router = None
     
     logger.info("SOLVENS CORE API stopped")
 
@@ -118,7 +173,6 @@ app = FastAPI(
 )
 
 # CORS middleware
-import os
 
 _cors_origins = [
     origin.strip()
@@ -209,24 +263,59 @@ async def chat_stream(request: ChatRequest, principal: Principal = Depends(requi
 
 @app.post("/tasks", response_model=TaskResponse, tags=["Tasks"])
 async def create_task(request: TaskRequest, principal: Principal = Depends(require_principal)) -> TaskResponse:
-    """Create a new task.
-    
-    Tasks are queued and executed by the orchestrator.
-    """
+    """Persist a serializable task and return its durable task ID."""
     require_role(principal, "developer", "editor", "admin", "owner")
+    if request.callback is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Callback names are not accepted; use a server-registered durable handler",
+        )
     if not orchestrator:
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
-    
+
+    priority_values = {
+        TaskPriority.LOW: 0,
+        TaskPriority.NORMAL: 10,
+        TaskPriority.HIGH: 20,
+        TaskPriority.CRITICAL: 30,
+    }
+    if durable_mode:
+        if not orchestrator.durable_enabled:
+            raise HTTPException(status_code=503, detail="Durable task workers are disabled")
+        if not principal.user_id:
+            raise HTTPException(status_code=403, detail="Durable user identity required")
+        try:
+            task_id = await orchestrator.submit_durable_task(
+                tenant_id=principal.tenant_id,
+                user_id=principal.user_id,
+                handler_name="api.echo",
+                payload={"description": request.description},
+                priority=priority_values[request.priority],
+                idempotency_key=request.idempotency_key,
+            )
+        except PermissionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except (SQLAlchemyError, RuntimeError) as exc:
+            raise HTTPException(status_code=503, detail="Task database unavailable") from exc
+        return TaskResponse(
+            id=task_id,
+            description=request.description,
+            status=TaskStatus.PENDING,
+        )
+
+    # Local development/test fallback remains process-local when no DB is configured.
     async def dummy_callback():
         return {"status": "completed", "message": f"Task: {request.description}"}
-    
+
     task_id = await orchestrator.submit_task(
         description=request.description,
         callback=dummy_callback,
         priority=request.priority,
     )
-    
     task_tenants[task_id] = principal.tenant_id
+    task_users[task_id] = principal.user_id or ""
     return TaskResponse(
         id=task_id,
         description=request.description,
@@ -236,11 +325,39 @@ async def create_task(request: TaskRequest, principal: Principal = Depends(requi
 
 @app.get("/tasks/{task_id}", response_model=TaskResponse, tags=["Tasks"])
 async def get_task(task_id: str, principal: Principal = Depends(require_principal)) -> TaskResponse:
-    """Get task status and result."""
+    """Get task status, scoped to the authenticated tenant and user."""
     if not orchestrator:
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
-    
-    if task_tenants.get(task_id) != principal.tenant_id:
+
+    if durable_mode:
+        try:
+            factory = get_session_factory()
+            async with factory() as session:
+                record = (
+                    await session.execute(
+                        select(CoreTaskRecord).where(
+                            CoreTaskRecord.id == task_id,
+                            CoreTaskRecord.tenant_id == principal.tenant_id,
+                            CoreTaskRecord.user_id == principal.user_id,
+                        )
+                    )
+                ).scalars().one_or_none()
+        except SQLAlchemyError as exc:
+            raise HTTPException(status_code=503, detail="Task database unavailable") from exc
+        if record is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return TaskResponse(
+            id=record.id,
+            description=_durable_task_description(record),
+            status=_durable_task_status(record.status),
+            result=record.result,
+            error=record.error,
+        )
+
+    if (
+        task_tenants.get(task_id) != principal.tenant_id
+        or task_users.get(task_id) != (principal.user_id or "")
+    ):
         raise HTTPException(status_code=404, detail="Task not found")
     try:
         task = orchestrator.get_task(task_id)
@@ -251,8 +368,8 @@ async def get_task(task_id: str, principal: Principal = Depends(require_principa
             result=task.result,
             error=task.error,
         )
-    except SolvensError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except SolvensError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/tasks", response_model=list[TaskResponse], tags=["Tasks"])
@@ -261,13 +378,57 @@ async def list_tasks(
     limit: int = 100,
     principal: Principal = Depends(require_principal),
 ) -> list[TaskResponse]:
-    """List tasks with optional status filter."""
+    """List tasks scoped to the authenticated tenant and user."""
     if not orchestrator:
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
-    
-    tasks = [task for task in orchestrator.list_tasks(status=status, limit=limit)
-             if task_tenants.get(task.id) == principal.tenant_id]
-    
+    limit = max(1, min(limit, 1000))
+
+    if durable_mode:
+        try:
+            factory = get_session_factory()
+            async with factory() as session:
+                statement = select(CoreTaskRecord).where(
+                    CoreTaskRecord.tenant_id == principal.tenant_id,
+                    CoreTaskRecord.user_id == principal.user_id,
+                )
+                if status is not None:
+                    db_status = {
+                        TaskStatus.PENDING: "queued",
+                        TaskStatus.RUNNING: "running",
+                        TaskStatus.COMPLETED: "completed",
+                        TaskStatus.FAILED: "failed",
+                        TaskStatus.CANCELLED: "cancelled",
+                    }[status]
+                    if status == TaskStatus.CANCELLED:
+                        statement = statement.where(
+                            CoreTaskRecord.status.in_(("cancelled", "cancel_requested"))
+                        )
+                    else:
+                        statement = statement.where(CoreTaskRecord.status == db_status)
+                records = (
+                    await session.execute(
+                        statement.order_by(CoreTaskRecord.created_at.desc()).limit(limit)
+                    )
+                ).scalars().all()
+        except SQLAlchemyError as exc:
+            raise HTTPException(status_code=503, detail="Task database unavailable") from exc
+        return [
+            TaskResponse(
+                id=record.id,
+                description=_durable_task_description(record),
+                status=_durable_task_status(record.status),
+                result=record.result,
+                error=record.error,
+            )
+            for record in records
+        ]
+
+    tasks = [
+        task
+        for task in orchestrator.list_tasks(status=status, limit=limit)
+        if task_tenants.get(task.id) == principal.tenant_id
+        and task_users.get(task.id) == (principal.user_id or "")
+    ]
     return [
         TaskResponse(
             id=task.id,
@@ -282,19 +443,35 @@ async def list_tasks(
 
 @app.delete("/tasks/{task_id}", tags=["Tasks"])
 async def cancel_task(task_id: str, principal: Principal = Depends(require_principal)) -> dict[str, str]:
-    """Cancel a running task."""
+    """Cancel a queued task or request cancellation from its active lease owner."""
     require_role(principal, "developer", "editor", "admin", "owner")
     if not orchestrator:
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
-    
-    if task_tenants.get(task_id) != principal.tenant_id:
-        raise HTTPException(status_code=404, detail="Task not found")
-    cancelled = await orchestrator.cancel_task(task_id)
-    
+
+    if durable_mode:
+        if not orchestrator.durable_enabled:
+            raise HTTPException(status_code=503, detail="Durable task workers are disabled")
+        if not principal.user_id:
+            raise HTTPException(status_code=403, detail="Durable user identity required")
+        try:
+            cancelled = await orchestrator.cancel_durable_task(
+                task_id=task_id,
+                tenant_id=principal.tenant_id,
+                user_id=principal.user_id,
+            )
+        except SQLAlchemyError as exc:
+            raise HTTPException(status_code=503, detail="Task database unavailable") from exc
+    else:
+        if (
+            task_tenants.get(task_id) != principal.tenant_id
+            or task_users.get(task_id) != (principal.user_id or "")
+        ):
+            raise HTTPException(status_code=404, detail="Task not found")
+        cancelled = await orchestrator.cancel_task(task_id)
+
     if not cancelled:
         raise HTTPException(status_code=400, detail="Task cannot be cancelled")
-    
-    return {"status": "cancelled", "task_id": task_id}
+    return {"status": "cancellation_requested", "task_id": task_id}
 
 
 # === Provider Routes ===

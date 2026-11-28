@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import timezone, datetime
-from typing import Any, Callable, TypeVar
+from typing import Any, Awaitable, Callable, TypeVar, TYPE_CHECKING
 
 import structlog
 
@@ -27,6 +28,11 @@ from solvens.core.types import (
     TaskStatus,
 )
 from solvens.router.router import CapabilityRouter
+
+if TYPE_CHECKING:
+    from solvens.persistence.worker import DurableTaskWorker
+
+DurableHandler = Callable[[dict[str, Any]], Awaitable[Any]]
 
 logger = structlog.get_logger(__name__)
 
@@ -50,6 +56,9 @@ class OrchestratorConfig:
     max_retries: int = 3
     enable_parallel: bool = True
     queue_size: int = 1000
+    durable_workers: int = 0
+    durable_lease_seconds: int = 60
+    durable_poll_interval: float = 1.0
 
 
 class TaskResult:
@@ -110,6 +119,46 @@ class AgentOrchestrator(BaseService[None]):
             "task_cancel": [],
         }
         self._lock = asyncio.Lock()
+        self._durable_handlers: dict[str, DurableHandler] = {}
+        self._durable_workers: list[DurableTaskWorker] = []
+        self._durable_worker_tasks: list[asyncio.Task[None]] = []
+
+    @property
+    def durable_enabled(self) -> bool:
+        """Whether database-backed workers are configured and running."""
+        return bool(self._durable_workers)
+
+    def register_durable_handler(self, name: str, handler: DurableHandler) -> None:
+        """Register a named, serializable task handler before initialization."""
+        if not name or len(name) > 128:
+            raise ValueError("durable handler name must contain 1..128 characters")
+        if name in self._durable_handlers:
+            raise ValueError(f"durable handler already registered: {name}")
+        self._durable_handlers[name] = handler
+
+    async def submit_durable_task(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        handler_name: str,
+        payload: dict[str, Any],
+        priority: int = 0,
+        max_attempts: int = 3,
+        idempotency_key: str | None = None,
+    ) -> str:
+        """Persist a durable task for execution by any configured worker."""
+        if not self._durable_workers:
+            raise OrchestratorError("Durable workers are not configured")
+        return await self._durable_workers[0].submit_task(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            handler_name=handler_name,
+            payload=payload,
+            priority=priority,
+            max_attempts=max_attempts,
+            idempotency_key=idempotency_key,
+        )
 
     async def initialize(self) -> None:
         """Initialize the orchestrator."""
@@ -122,18 +171,49 @@ class AgentOrchestrator(BaseService[None]):
         if self.config.enable_parallel:
             self._executor = ThreadPoolExecutor(max_workers=self.config.max_concurrent_tasks)
         
-        # Start worker tasks
+        # Start process-local callback workers.
         for i in range(self.config.max_concurrent_tasks):
             worker = asyncio.create_task(self._worker(i))
             self._workers.append(worker)
-        
-        logger.info("AgentOrchestrator initialized", workers=len(self._workers))
+
+        # Import storage dependencies only when durable workers are enabled.
+        if self.config.durable_workers > 0:
+            from solvens.persistence.worker import DurableTaskWorker
+
+        # Durable workers claim database records with SKIP LOCKED and leases.
+        for i in range(max(0, self.config.durable_workers)):
+            worker_id = f"{socket.gethostname()[:48]}:{uuid.uuid4().hex}"
+            durable_worker = DurableTaskWorker(
+                worker_id=worker_id,
+                handlers=self._durable_handlers,
+                lease_seconds=self.config.durable_lease_seconds,
+                poll_interval=self.config.durable_poll_interval,
+            )
+            self._durable_workers.append(durable_worker)
+            self._durable_worker_tasks.append(
+                asyncio.create_task(durable_worker.run(), name=f"durable-worker-{i}")
+            )
+
+        logger.info(
+            "AgentOrchestrator initialized",
+            workers=len(self._workers),
+            durable_workers=len(self._durable_workers),
+        )
 
     async def shutdown(self) -> None:
         """Shutdown the orchestrator gracefully."""
         logger.info("Shutting down AgentOrchestrator")
         
-        # Cancel all workers
+        # Stop durable workers. In-flight work is recovered after lease expiry.
+        for worker in self._durable_workers:
+            worker.stop()
+        for worker_task in self._durable_worker_tasks:
+            worker_task.cancel()
+        await asyncio.gather(*self._durable_worker_tasks, return_exceptions=True)
+        self._durable_worker_tasks.clear()
+        self._durable_workers.clear()
+
+        # Cancel process-local workers
         for worker in self._workers:
             worker.cancel()
         
@@ -303,6 +383,16 @@ class AgentOrchestrator(BaseService[None]):
             duration=duration,
         )
 
+    async def cancel_durable_task(
+        self, *, task_id: str, tenant_id: str, user_id: str
+    ) -> bool:
+        """Cancel a persisted task only when tenant and owner match."""
+        if not self._durable_workers:
+            raise OrchestratorError("Durable workers are not configured")
+        return await self._durable_workers[0].cancel_task(
+            task_id=task_id, tenant_id=tenant_id, user_id=user_id
+        )
+
     async def route_message(
         self,
         messages: list[Message],
@@ -459,6 +549,7 @@ class AgentOrchestrator(BaseService[None]):
             "running_tasks": len(self._running_tasks),
             "queued_tasks": self._task_queue.qsize() if self._task_queue else 0,
             "workers": len(self._workers),
+            "durable_workers": len(self._durable_workers),
             "completed": sum(1 for t in self._tasks.values() if t.status == TaskStatus.COMPLETED),
             "failed": sum(1 for t in self._tasks.values() if t.status == TaskStatus.FAILED),
         }
