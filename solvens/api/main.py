@@ -281,6 +281,7 @@ async def list_tasks(
 @app.delete("/tasks/{task_id}", tags=["Tasks"])
 async def cancel_task(task_id: str, principal: Principal = Depends(require_principal)) -> dict[str, str]:
     """Cancel a running task."""
+    require_role(principal, "developer", "editor", "admin", "owner")
     if not orchestrator:
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
     
