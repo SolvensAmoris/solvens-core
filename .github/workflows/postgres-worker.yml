@@ -1,0 +1,54 @@
+name: PostgreSQL worker concurrency
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "solvens/persistence/**"
+      - "migrations/**"
+      - "tests/test_postgres_worker_concurrency.py"
+      - ".github/workflows/postgres-worker.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "solvens/persistence/**"
+      - "migrations/**"
+      - "tests/test_postgres_worker_concurrency.py"
+      - ".github/workflows/postgres-worker.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: solvens_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d solvens_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/solvens_test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install project and test dependencies
+        run: pip install -e ".[dev,api,storage]"
+      - name: Apply migrations
+        run: alembic upgrade head
+      - name: Prove concurrent claims with PostgreSQL
+        run: pytest -q tests/test_postgres_worker_concurrency.py
