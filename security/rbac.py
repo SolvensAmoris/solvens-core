@@ -289,7 +289,8 @@ class RBACManager:
 
         # Tenant boundary applies to every role, including OWNER and ADMIN.
         acl = self._workflow_acls.get(workflow_id)
-        if acl and acl.team_id != user.team_id:
+        # A workflow without an explicit tenant ACL has no trustworthy owner.
+        if acl is None or acl.team_id != stored_user.team_id:
             return False
 
         if acl and (user.id in acl.deny_users or user.team_id in acl.deny_users):
