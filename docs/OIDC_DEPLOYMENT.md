@@ -81,7 +81,7 @@ Delivery is **at-least-once**, not exactly-once. A process can perform an extern
 
 ## Dashboard outbox and live event replay
 
-Set `SOLVENS_REDIS_URL` to enable the dashboard's transactional outbox publisher and Redis Stream listener. Run the dashboard API with database access and Redis Streams enabled.
+Set `SOLVENS_REDIS_URL` to enable the dashboard's transactional outbox publisher and Redis Stream listener. Run the dashboard API with database access and Redis Streams enabled. `SOLVENS_OUTBOX_MAX_STREAM_LENGTH` defaults to `50000` entries; `SOLVENS_OUTBOX_POLL_INTERVAL` defaults to `0.5` seconds.
 
 Run snapshot updates are inserted into `outbox_events` in the same transaction as the run snapshot. The publisher writes them to `solvens:dashboard:events` and marks them published only after Redis accepts the entry. Redis Stream entries include event IDs and run sequence numbers; consumers ignore duplicate or stale snapshots.
 
