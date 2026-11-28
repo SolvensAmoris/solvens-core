@@ -40,6 +40,7 @@ def _test_principal(request: Request) -> Principal:
 class DashboardTenantBoundaryTests(unittest.TestCase):
     def setUp(self):
         dashboard.runs.clear()
+        dashboard.run_tasks.clear()
         dashboard.ws_tickets.clear()
         self.db_path = tempfile.mktemp(suffix=".sqlite")
         self.engine = create_async_engine(
@@ -74,6 +75,7 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
         self.addCleanup(self.client.close)
 
     def _cleanup_db(self):
+        dashboard.run_tasks.clear()
         self.db_patch.stop()
         asyncio.run(self.engine.dispose())
         if os.path.exists(self.db_path):
