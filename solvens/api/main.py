@@ -274,8 +274,8 @@ async def create_task(request: TaskRequest, principal: Principal = Depends(requi
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        task_tenants[task_id] = principal.tenant_id
-        task_users[task_id] = principal.user_id
+        except SQLAlchemyError as exc:
+            raise HTTPException(status_code=503, detail="Task database unavailable") from exc
         return TaskResponse(
             id=task_id,
             description=request.description,
@@ -428,11 +428,14 @@ async def cancel_task(task_id: str, principal: Principal = Depends(require_princ
     if orchestrator.durable_enabled:
         if not principal.user_id:
             raise HTTPException(status_code=403, detail="Durable user identity required")
-        cancelled = await orchestrator.cancel_durable_task(
-            task_id=task_id,
-            tenant_id=principal.tenant_id,
-            user_id=principal.user_id,
-        )
+        try:
+            cancelled = await orchestrator.cancel_durable_task(
+                task_id=task_id,
+                tenant_id=principal.tenant_id,
+                user_id=principal.user_id,
+            )
+        except SQLAlchemyError as exc:
+            raise HTTPException(status_code=503, detail="Task database unavailable") from exc
     else:
         if (
             task_tenants.get(task_id) != principal.tenant_id
