@@ -149,6 +149,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await orchestrator.shutdown()
     if router:
         await router.shutdown()
+    durable_mode = False
+    task_tenants.clear()
+    task_users.clear()
+    orchestrator = None
+    router = None
     
     logger.info("SOLVENS CORE API stopped")
 
@@ -166,7 +171,6 @@ app = FastAPI(
 )
 
 # CORS middleware
-import os
 
 _cors_origins = [
     origin.strip()
