@@ -39,7 +39,7 @@ Tickets and dashboard run state are currently process-local. Run one dashboard w
 
 The first RBAC user must be an OWNER provisioned with `SOLVENS_RBAC_BOOTSTRAP_TOKEN`. Subsequent user creation and workflow ACL changes require an authoritative OWNER/ADMIN actor in the same tenant. ADMIN cannot grant ADMIN or OWNER. API-key creation/revocation requires an authenticated owner of the key or an authorized tenant administrator. Tenant creation remains a platform bootstrap operation.
 
-The current `RBACManager` is in-memory. Its bootstrap token and actor checks close unauthenticated mutation paths in this implementation, but they do not replace persistent identity/membership storage. Before multi-instance production use, persist users, memberships, API keys and ACLs transactionally and map OIDC `sub` to an immutable internal principal.
+Both `security.RBACManager` and the primary `cosmos.security.RBAC` implementation are in-memory. Their bootstrap and actor checks close unauthenticated mutation paths in these managers, but they do not replace persistent identity/membership storage. Before multi-instance production use, persist users, memberships, API keys and ACLs transactionally and map OIDC `sub` to an immutable internal principal. The core API task-to-tenant ownership map is also process-local, so run a single worker until that mapping moves into shared durable storage.
 
 ## Operational requirements
 
