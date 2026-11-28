@@ -11,7 +11,7 @@ from functools import lru_cache
 from typing import Any
 
 import jwt
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request, status, Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
 
