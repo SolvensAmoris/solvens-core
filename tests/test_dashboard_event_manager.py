@@ -33,12 +33,14 @@ async def test_snapshot_fanout_is_tenant_bound_and_sequence_deduplicated():
     await manager.broadcast_snapshot(
         run_id="run-001",
         tenant_id="tenant-a",
+        user_id="user-a",
         sequence=10,
         snapshot={"status": "old"},
     )
     await manager.broadcast_snapshot(
         run_id="run-001",
         tenant_id="tenant-b",
+        user_id="user-a",
         sequence=12,
         snapshot={"status": "wrong-tenant"},
     )
@@ -47,12 +49,14 @@ async def test_snapshot_fanout_is_tenant_bound_and_sequence_deduplicated():
     await manager.broadcast_snapshot(
         run_id="run-001",
         tenant_id="tenant-a",
+        user_id="user-a",
         sequence=11,
         snapshot={"status": "new"},
     )
     await manager.broadcast_snapshot(
         run_id="run-001",
         tenant_id="tenant-a",
+        user_id="user-a",
         sequence=9,
         snapshot={"status": "stale"},
     )
