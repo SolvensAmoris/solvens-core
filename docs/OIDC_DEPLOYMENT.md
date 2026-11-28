@@ -52,3 +52,19 @@ Both `security.RBACManager` and the primary `cosmos.security.RBAC` implementatio
 6. Rotate provider/service credentials and disable compromised credentials promptly.
 
 This change provides token verification and tenant checks at the API boundary. It does not claim persistent RBAC, cross-worker state sharing, database row-level security, or immediate JWT revocation.
+
+
+## Dashboard browser configuration
+
+Configure the Next.js dashboard with these public, non-secret variables:
+
+- `NEXT_PUBLIC_OIDC_AUTHORITY`: trusted HTTPS OIDC authority/issuer.
+- `NEXT_PUBLIC_OIDC_CLIENT_ID`: public SPA client ID; never a client secret.
+- `NEXT_PUBLIC_OIDC_API_SCOPE`: provider-defined scope that grants access to the SOLVENS API.
+- `NEXT_PUBLIC_API_URL`: API origin, for example `https://api.example.test`.
+- `NEXT_PUBLIC_OIDC_REDIRECT_URI`: exact registered callback, normally `https://dashboard.example.test/auth/callback`.
+- `NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI`: exact registered post-logout URI.
+
+The dashboard uses Authorization Code + PKCE (S256). OIDC transaction state is kept in session storage so the full-page provider redirect can be validated; access and user tokens use in-memory storage and are not written to localStorage or sessionStorage. API calls attach the access token as a bearer header. The dashboard requests a one-use WebSocket ticket before opening a socket.
+
+Do not place client secrets, provider API keys, or bearer tokens in `NEXT_PUBLIC_*` variables. The public values above identify the client and endpoints only.

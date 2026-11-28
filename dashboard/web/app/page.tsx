@@ -7,6 +7,7 @@ import Simulator from "@/components/Simulator";
 import MetricsPanel from "@/components/MetricsPanel";
 import LogsPanel from "@/components/LogsPanel";
 import ActiveTasks from "@/components/ActiveTasks";
+import { useAuth } from "@/lib/auth";
 
 // Dynamic import for React Flow (requires client-side only)
 const DAGViewer = dynamic(() => import("@/components/DAGViewer"), {
@@ -27,73 +28,68 @@ export default function Dashboard() {
   const { simulation, currentRun, setSimulation, setCurrentRun, updateTask, updateMetrics, addLog, logs, reset } =
     useDashboardStore();
   const [activeTab, setActiveTab] = useState<"dag" | "tasks">("dag");
+  const { user, loading, configured, signIn, apiFetch } = useAuth();
 
-  // WebSocket connection
+  // Authenticate, request a one-use server ticket, then open the socket.
   useEffect(() => {
-    if (!currentRun) return;
+    if (!currentRun || !user) return;
+    let cancelled = false;
+    let ws: WebSocket | null = null;
 
-    const ws = new WebSocket(`${API_URL.replace("http", "ws")}/ws/run/${currentRun.run_id}`);
-    
-    ws.onopen = () => {
-      console.log("WebSocket connected");
-      addLog({ type: "system", message: "Connected to run " + currentRun.run_id });
-    };
+    const connect = async () => {
+      try {
+        const response = await apiFetch("/api/auth/ws-ticket", { method: "POST" });
+        const { ticket } = await response.json();
+        if (cancelled) return;
+        ws = new WebSocket(
+          `${API_URL.replace("http", "ws")}/ws/run/${currentRun.run_id}?ticket=${encodeURIComponent(ticket)}`,
+        );
 
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-      const { type, data } = msg;
-
-      switch (type) {
-        case "task_start":
-          updateTask(data.task, { status: "running" });
-          addLog({ type: "task_start", task: data.task, message: `Started (${data.provider})` });
-          break;
-
-        case "task_end":
-          updateTask(data.task, {
-            status: "done",
-            cost_usd: data.cost_usd,
-            tokens: data.tokens,
-          });
-          addLog({
-            type: "task_end",
-            task: data.task,
-            message: `Completed in ${(data.duration_ms / 1000).toFixed(2)}s`,
-          });
-          break;
-
-        case "task_error":
-          updateTask(data.task, { status: "error" });
-          addLog({ type: "task_error", task: data.task, message: data.error || "Error" });
-          break;
-
-        case "metric_update":
-          updateMetrics(data);
-          break;
-
-        case "run_end":
-          addLog({ type: "run_end", message: `Run completed - ${data.status}` });
-          break;
+        ws.onopen = () => addLog({ type: "system", message: "Connected to run " + currentRun.run_id });
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          const { type, data } = msg;
+          switch (type) {
+            case "task_start":
+              updateTask(data.task, { status: "running" });
+              addLog({ type: "task_start", task: data.task, message: `Started (${data.provider})` });
+              break;
+            case "task_end":
+              updateTask(data.task, { status: "done", cost_usd: data.cost_usd, tokens: data.tokens });
+              addLog({ type: "task_end", task: data.task, message: `Completed in ${(data.duration_ms / 1000).toFixed(2)}s` });
+              break;
+            case "task_error":
+              updateTask(data.task, { status: "error" });
+              addLog({ type: "task_error", task: data.task, message: data.error || "Error" });
+              break;
+            case "metric_update":
+              updateMetrics(data);
+              break;
+            case "run_end":
+              addLog({ type: "run_end", message: `Run completed - ${data.status}` });
+              break;
+          }
+        };
+        ws.onerror = () => addLog({ type: "error", message: "WebSocket connection error" });
+        ws.onclose = () => addLog({ type: "system", message: "WebSocket disconnected" });
+      } catch (err) {
+        if (!cancelled) {
+          console.error("WebSocket ticket error:", err);
+          addLog({ type: "error", message: "Could not authorize WebSocket connection" });
+        }
       }
     };
 
-    ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
-      addLog({ type: "error", message: "WebSocket connection error" });
-    };
-
-    ws.onclose = () => {
-      console.log("WebSocket disconnected");
-    };
-
+    void connect();
     return () => {
-      ws.close();
+      cancelled = true;
+      ws?.close();
     };
-  }, [currentRun, updateTask, updateMetrics, addLog]);
+  }, [currentRun, user, apiFetch, updateTask, updateMetrics, addLog]);
 
   const handleSimulate = useCallback(async (workflow: any) => {
     try {
-      const res = await fetch(`${API_URL}/api/simulate`, {
+      const res = await apiFetch("/api/simulate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(workflow),
@@ -105,12 +101,12 @@ export default function Dashboard() {
       console.error("Simulate error:", err);
       addLog({ type: "error", message: "Simulation failed" });
     }
-  }, [setSimulation, addLog]);
+  }, [setSimulation, addLog, apiFetch]);
 
   const handleRun = useCallback(async (workflow: any) => {
     try {
       reset();
-      const res = await fetch(`${API_URL}/api/run`, {
+      const res = await apiFetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(workflow),
@@ -124,14 +120,17 @@ export default function Dashboard() {
           workflow_name: workflow.name,
           status: "running",
           tasks: Object.fromEntries(
-            simulation.nodes.map((n) => [
+            simulation.dag.nodes.map((n) => [
               n.id,
               {
                 id: n.id,
-                name: n.id,
+                name: n.data.label,
                 provider: n.data.provider,
                 model: "default",
                 status: "pending",
+                dependencies: simulation.dag.edges
+                  .filter((edge) => edge.target === n.id)
+                  .map((edge) => edge.source),
               },
             ])
           ),
@@ -155,28 +154,54 @@ export default function Dashboard() {
       console.error("Run error:", err);
       addLog({ type: "error", message: "Failed to start run" });
     }
-  }, [simulation, reset, setCurrentRun, addLog]);
+  }, [simulation, reset, setCurrentRun, addLog, apiFetch]);
 
-  // Prepare DAG nodes and edges
-  const dagNodes = simulation?.dag?.nodes || currentRun
-    ? (simulation?.dag?.nodes || currentRun?.tasks
-        ? Object.values(currentRun?.tasks || {}).map((t) => ({
-            id: t.id,
-            data: {
-              label: t.name,
-              provider: t.provider,
-              status: t.status,
-              cost_usd: t.cost_usd,
-            },
-          }))
-        : [])
-    : [];
+  // Prepare DAG nodes and edges from the current simulation or run.
+  const dagNodes = simulation
+    ? simulation.dag.nodes.map((node) => ({
+        id: node.id,
+        data: {
+          label: node.data.label,
+          provider: node.data.provider,
+          status: node.data.status || "pending",
+          cost_usd: node.data.estimated_cost,
+        },
+      }))
+    : currentRun
+      ? Object.values(currentRun.tasks).map((task) => ({
+          id: task.id,
+          data: {
+            label: task.name,
+            provider: task.provider,
+            status: task.status,
+            cost_usd: task.cost_usd,
+          },
+        }))
+      : [];
 
-  const dagEdges = simulation?.dag?.edges || currentRun
-    ? (simulation?.dag?.edges || Object.values(currentRun?.tasks || {}).flatMap((t) =>
-        t.dependencies.map((dep) => ({ source: dep, target: t.id }))
-      ))
-    : [];
+  const dagEdges = simulation
+    ? simulation.dag.edges
+    : currentRun
+      ? Object.values(currentRun.tasks).flatMap((task) =>
+          task.dependencies.map((dependency) => ({ source: dependency, target: task.id })),
+        )
+      : [];
+
+  if (!configured) {
+    return <div className="flex h-full items-center justify-center text-amber-300">Dashboard OIDC configuration is missing.</div>;
+  }
+  if (loading) {
+    return <div className="flex h-full items-center justify-center text-[#8888aa]">Loading secure session…</div>;
+  }
+  if (!user) {
+    return (
+      <div className="flex h-full items-center justify-center bg-[#0f0f13] text-white">
+        <button onClick={() => void signIn()} className="rounded bg-indigo-600 px-5 py-3 font-medium hover:bg-indigo-500">
+          Sign in to SOLVENS CORE
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full">

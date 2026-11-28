@@ -75,6 +75,7 @@ class RunState:
     run_id: str
     workflow_name: str
     tenant_id: str
+    user_id: str | None = None
     status: str = "pending"
     tasks: dict[str, TaskNode] = field(default_factory=dict)
     metrics: RunMetrics = field(default_factory=RunMetrics)
@@ -178,7 +179,11 @@ async def websocket_endpoint(websocket: WebSocket, run_id: str, ticket: str = Qu
         return
     principal = issued[0]
     run = runs.get(run_id)
-    if run is None or run.tenant_id != principal.tenant_id:
+    if (
+        run is None
+        or run.tenant_id != principal.tenant_id
+        or run.user_id != principal.user_id
+    ):
         await websocket.close(code=4404)
         return
     await manager.connect(websocket, run_id)
@@ -235,14 +240,19 @@ async def list_runs(principal: Principal = Depends(require_principal)):
             "tasks_total": run.metrics.tasks_total,
             "created_at": run.created_at
         }
-        for run_id, run in runs.items() if run.tenant_id == principal.tenant_id
+        for run_id, run in runs.items()
+        if run.tenant_id == principal.tenant_id and run.user_id == principal.user_id
     ]
 
 
 @app.get("/api/run/{run_id}")
 async def get_run(run_id: str, principal: Principal = Depends(require_principal)):
     """Get run details."""
-    if run_id not in runs or runs[run_id].tenant_id != principal.tenant_id:
+    if (
+        run_id not in runs
+        or runs[run_id].tenant_id != principal.tenant_id
+        or runs[run_id].user_id != principal.user_id
+    ):
         raise HTTPException(status_code=404, detail="Run not found")
     return get_run_dag(run_id)
 
@@ -250,7 +260,11 @@ async def get_run(run_id: str, principal: Principal = Depends(require_principal)
 @app.get("/api/run/{run_id}/metrics")
 async def get_run_metrics(run_id: str, principal: Principal = Depends(require_principal)):
     """Get run metrics."""
-    if run_id not in runs or runs[run_id].tenant_id != principal.tenant_id:
+    if (
+        run_id not in runs
+        or runs[run_id].tenant_id != principal.tenant_id
+        or runs[run_id].user_id != principal.user_id
+    ):
         raise HTTPException(status_code=404, detail="Run not found")
     run = runs[run_id]
     return asdict(run.metrics)
@@ -383,6 +397,7 @@ async def start_run(workflow: dict, principal: Principal = Depends(require_princ
         run_id=run_id,
         workflow_name=workflow_name,
         tenant_id=principal.tenant_id,
+        user_id=principal.user_id,
         tasks=dag_nodes,
         estimated_time_ms=estimated_time_ms,
         estimated_cost_usd=estimated_cost_usd

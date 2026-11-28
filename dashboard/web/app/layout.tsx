@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AuthControls, AuthProvider } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "SOLVENS CORE Dashboard",
@@ -20,6 +21,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen bg-[#0f0f13] text-white antialiased">
+        <AuthProvider>
         <div className="flex h-screen flex-col">
           {/* Header */}
           <header className="flex h-14 shrink-0 items-center justify-between border-b border-[#2a2a3a] bg-[#16161d] px-6">
@@ -31,6 +33,7 @@ export default function RootLayout({
               <span className="text-xs text-[#8888aa]">
                 Dashboard
               </span>
+              <AuthControls />
               <div className="h-2 w-2 rounded-full bg-green-500"></div>
             </div>
           </header>
@@ -40,6 +43,7 @@ export default function RootLayout({
             {children}
           </main>
         </div>
+        </AuthProvider>
       </body>
     </html>
   );
