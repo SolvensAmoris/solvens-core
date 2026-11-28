@@ -477,43 +477,77 @@ async def create_ws_ticket(
 
 @app.get("/api/runs")
 async def list_runs(principal: Principal = Depends(require_principal)):
-    """List all runs."""
-    return [
-        {
-            "run_id": run_id,
-            "workflow_name": run.workflow_name,
-            "status": run.status,
-            "tasks_completed": run.metrics.tasks_completed,
-            "tasks_total": run.metrics.tasks_total,
-            "created_at": run.created_at
-        }
-        for run_id, run in runs.items()
-        if run.tenant_id == principal.tenant_id and run.user_id == principal.user_id
-    ]
+    """List durable runs owned by the authenticated user and tenant."""
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            records = (
+                await session.execute(
+                    select(DashboardRunRecord)
+                    .where(
+                        DashboardRunRecord.tenant_id == principal.tenant_id,
+                        DashboardRunRecord.user_id == principal.user_id,
+                    )
+                    .order_by(DashboardRunRecord.created_at.desc())
+                    .limit(100)
+                )
+            ).scalars().all()
+    except (SQLAlchemyError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail="Run database unavailable") from exc
+
+    response = []
+    for record in records:
+        snapshot = record.snapshot if isinstance(record.snapshot, dict) else {}
+        metrics = snapshot.get("metrics", {})
+        if not isinstance(metrics, dict):
+            metrics = {}
+        created_at = record.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        response.append({
+            "run_id": record.id,
+            "workflow_name": record.workflow_name,
+            "status": record.status,
+            "tasks_completed": metrics.get("tasks_completed", 0),
+            "tasks_total": metrics.get("tasks_total", 0),
+            "created_at": created_at.timestamp(),
+        })
+    return response
 
 
 @app.get("/api/run/{run_id}")
 async def get_run(run_id: str, principal: Principal = Depends(require_principal)):
-    """Get run details."""
-    if (
-        run_id not in runs
-        or runs[run_id].tenant_id != principal.tenant_id
-        or runs[run_id].user_id != principal.user_id
-    ):
+    """Get a persisted run snapshot, scoped to its owner."""
+    try:
+        record = await _load_run_record(
+            run_id, tenant_id=principal.tenant_id, user_id=principal.user_id or ""
+        )
+    except (SQLAlchemyError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail="Run database unavailable") from exc
+    if record is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    return get_run_dag(run_id)
+    run = runs.get(run_id)
+    if run is None or run.tenant_id != principal.tenant_id or run.user_id != principal.user_id:
+        run = _deserialize_run(record)
+        runs[run_id] = run
+    return _run_to_dag(run)
 
 
 @app.get("/api/run/{run_id}/metrics")
 async def get_run_metrics(run_id: str, principal: Principal = Depends(require_principal)):
-    """Get run metrics."""
-    if (
-        run_id not in runs
-        or runs[run_id].tenant_id != principal.tenant_id
-        or runs[run_id].user_id != principal.user_id
-    ):
+    """Get persisted run metrics, scoped to its owner."""
+    try:
+        record = await _load_run_record(
+            run_id, tenant_id=principal.tenant_id, user_id=principal.user_id or ""
+        )
+    except (SQLAlchemyError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail="Run database unavailable") from exc
+    if record is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    run = runs[run_id]
+    run = runs.get(run_id)
+    if run is None or run.tenant_id != principal.tenant_id or run.user_id != principal.user_id:
+        run = _deserialize_run(record)
+        runs[run_id] = run
     return asdict(run.metrics)
 
 
