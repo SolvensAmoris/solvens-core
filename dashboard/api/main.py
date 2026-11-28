@@ -5,20 +5,26 @@ FastAPI + WebSockets for real-time DAG visualization.
 """
 
 import asyncio
+import hashlib
 import json
+import logging
 import time
 import uuid
 import secrets
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, select
+from sqlalchemy.exc import SQLAlchemyError
 from security.oidc import Principal, require_principal, require_role
+from solvens.persistence.database import get_session_factory
+from solvens.persistence.models import DashboardRunRecord, WebSocketTicketRecord
 
 
 # ============================================================================
@@ -133,13 +139,208 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # Run Storage
 # ============================================================================
 
 runs: dict[str, RunState] = {}
-ws_tickets: dict[str, tuple[Principal, float]] = {}
+run_tasks: dict[str, asyncio.Task] = {}
+
+
+class WsTicketRequest(BaseModel):
+    run_id: str = Field(min_length=1, max_length=128)
+
+
+def _serialize_run(run: RunState) -> dict:
+    return {
+        "run_id": run.run_id,
+        "workflow_name": run.workflow_name,
+        "tenant_id": run.tenant_id,
+        "user_id": run.user_id,
+        "status": run.status,
+        "tasks": {
+            task_id: {
+                "id": task.id,
+                "name": task.name,
+                "provider": task.provider,
+                "model": task.model,
+                "status": task.status.value,
+                "start_time": task.start_time,
+                "end_time": task.end_time,
+                "input_tokens": task.input_tokens,
+                "output_tokens": task.output_tokens,
+                "cost_usd": task.cost_usd,
+                "dependencies": list(task.dependencies),
+                "logs": list(task.logs),
+            }
+            for task_id, task in run.tasks.items()
+        },
+        "metrics": asdict(run.metrics),
+        "created_at": run.created_at,
+        "estimated_time_ms": run.estimated_time_ms,
+        "estimated_cost_usd": run.estimated_cost_usd,
+    }
+
+
+def _deserialize_run(record: DashboardRunRecord) -> RunState:
+    snapshot = record.snapshot if isinstance(record.snapshot, dict) else {}
+    tasks: dict[str, TaskNode] = {}
+    raw_tasks = snapshot.get("tasks", {})
+    if isinstance(raw_tasks, dict):
+        for task_id, raw in raw_tasks.items():
+            if not isinstance(raw, dict):
+                continue
+            try:
+                task_status = TaskStatus(raw.get("status", "pending"))
+            except ValueError:
+                task_status = TaskStatus.ERROR
+            tasks[str(task_id)] = TaskNode(
+                id=str(raw.get("id", task_id)),
+                name=str(raw.get("name", task_id)),
+                provider=str(raw.get("provider", "unknown")),
+                model=str(raw.get("model", "default")),
+                status=task_status,
+                start_time=raw.get("start_time"),
+                end_time=raw.get("end_time"),
+                input_tokens=int(raw.get("input_tokens", 0)),
+                output_tokens=int(raw.get("output_tokens", 0)),
+                cost_usd=float(raw.get("cost_usd", 0.0)),
+                dependencies=list(raw.get("dependencies", [])),
+                logs=list(raw.get("logs", [])),
+            )
+    raw_metrics = snapshot.get("metrics", {})
+    if not isinstance(raw_metrics, dict):
+        raw_metrics = {}
+    metric_fields = RunMetrics.__dataclass_fields__.keys()
+    metrics = RunMetrics(**{key: value for key, value in raw_metrics.items() if key in metric_fields})
+    created_at = snapshot.get("created_at")
+    if not isinstance(created_at, (int, float)):
+        created_at = record.created_at.timestamp()
+    return RunState(
+        run_id=record.id,
+        workflow_name=record.workflow_name,
+        tenant_id=record.tenant_id,
+        user_id=record.user_id,
+        status=record.status,
+        tasks=tasks,
+        metrics=metrics,
+        created_at=float(created_at),
+        estimated_time_ms=float(snapshot.get("estimated_time_ms", 0.0)),
+        estimated_cost_usd=float(snapshot.get("estimated_cost_usd", 0.0)),
+    )
+
+
+async def _persist_run(run: RunState, *, create: bool = False) -> None:
+    if not run.user_id:
+        raise ValueError("Run requires a durable internal user ID")
+    snapshot = _serialize_run(run)
+    json.dumps(snapshot, allow_nan=False)
+    factory = get_session_factory()
+    async with factory() as session:
+        record = (
+            await session.execute(
+                select(DashboardRunRecord)
+                .where(DashboardRunRecord.id == run.run_id)
+                .with_for_update()
+            )
+        ).scalars().one_or_none()
+        if record is None:
+            if not create:
+                raise LookupError("Dashboard run record not found")
+            record = DashboardRunRecord(
+                id=run.run_id,
+                tenant_id=run.tenant_id,
+                user_id=run.user_id,
+                workflow_name=run.workflow_name,
+                status=run.status,
+                snapshot=snapshot,
+                sequence=1,
+            )
+            session.add(record)
+        else:
+            if record.tenant_id != run.tenant_id or record.user_id != run.user_id:
+                raise PermissionError("Dashboard run owner mismatch")
+            record.status = run.status
+            record.snapshot = snapshot
+            record.sequence += 1
+        await session.commit()
+
+
+async def _load_run_record(
+    run_id: str, *, tenant_id: str, user_id: str
+) -> DashboardRunRecord | None:
+    factory = get_session_factory()
+    async with factory() as session:
+        return (
+            await session.execute(
+                select(DashboardRunRecord).where(
+                    DashboardRunRecord.id == run_id,
+                    DashboardRunRecord.tenant_id == tenant_id,
+                    DashboardRunRecord.user_id == user_id,
+                )
+            )
+        ).scalars().one_or_none()
+
+
+async def _consume_ws_ticket(ticket: str, run_id: str) -> tuple[str, str] | None:
+    if not ticket or len(ticket) > 512:
+        return None
+    ticket_hash = hashlib.sha256(ticket.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc)
+    factory = get_session_factory()
+    async with factory() as session:
+        record = (
+            await session.execute(
+                select(WebSocketTicketRecord)
+                .where(
+                    WebSocketTicketRecord.ticket_hash == ticket_hash,
+                    WebSocketTicketRecord.run_id == run_id,
+                    WebSocketTicketRecord.consumed_at.is_(None),
+                    WebSocketTicketRecord.expires_at > now,
+                )
+                .with_for_update(skip_locked=True)
+            )
+        ).scalars().one_or_none()
+        if record is None:
+            await session.rollback()
+            return None
+        record.consumed_at = now
+        await session.commit()
+        return record.tenant_id, record.user_id
+
+
+def _run_to_dag(run: RunState) -> dict:
+    nodes = []
+    for task in run.tasks.values():
+        nodes.append({
+            "id": task.id,
+            "type": "task",
+            "data": {
+                "label": task.name,
+                "provider": task.provider,
+                "model": task.model,
+                "status": task.status.value,
+                "cost_usd": task.cost_usd,
+                "tokens": task.input_tokens + task.output_tokens,
+            },
+        })
+    edges = [
+        {"source": dependency, "target": task.id, "type": "default"}
+        for task in run.tasks.values()
+        for dependency in task.dependencies
+    ]
+    return {
+        "run_id": run.run_id,
+        "workflow_name": run.workflow_name,
+        "status": run.status,
+        "nodes": nodes,
+        "edges": edges,
+        "metrics": asdict(run.metrics),
+        "estimated_time_ms": run.estimated_time_ms,
+        "estimated_cost_usd": run.estimated_cost_usd,
+    }
 
 
 # ============================================================================
@@ -173,40 +374,55 @@ app.add_middleware(
 
 @app.websocket("/ws/run/{run_id}")
 async def websocket_endpoint(websocket: WebSocket, run_id: str, ticket: str = Query(...)):
-    issued = ws_tickets.pop(ticket, None)
-    if issued is None or issued[1] < time.time():
+    """Consume a hashed, run-bound ticket once and load the durable run snapshot."""
+    try:
+        owner = await _consume_ws_ticket(ticket, run_id)
+    except (SQLAlchemyError, RuntimeError):
+        await websocket.close(code=1011)
+        return
+    if owner is None:
         await websocket.close(code=4401)
         return
-    principal = issued[0]
-    run = runs.get(run_id)
-    if (
-        run is None
-        or run.tenant_id != principal.tenant_id
-        or run.user_id != principal.user_id
-    ):
+
+    tenant_id, user_id = owner
+    try:
+        record = await _load_run_record(
+            run_id, tenant_id=tenant_id, user_id=user_id
+        )
+    except (SQLAlchemyError, RuntimeError):
+        await websocket.close(code=1011)
+        return
+    if record is None:
         await websocket.close(code=4404)
         return
+
+    run = runs.get(run_id)
+    if run is None or run.tenant_id != tenant_id or run.user_id != user_id:
+        run = _deserialize_run(record)
+        runs[run_id] = run
+
     await manager.connect(websocket, run_id)
     try:
-        # Send initial state if run exists
-        if run_id in runs:
-            await websocket.send_text(json.dumps({
-                "type": "dag_update",
-                "data": get_run_dag(run_id),
-                "timestamp": time.time()
-            }))
-
+        await websocket.send_text(json.dumps({
+            "type": "dag_update",
+            "data": _run_to_dag(run),
+            "timestamp": time.time(),
+        }))
         while True:
-            # Keep connection alive
             data = await websocket.receive_text()
-            # Handle client messages (e.g., pause, cancel)
             try:
                 msg = json.loads(data)
                 if msg.get("type") == "ping":
-                    await websocket.send_text(json.dumps({"type": "pong", "timestamp": time.time()}))
-            except:
-                pass
+                    await websocket.send_text(json.dumps({
+                        "type": "pong",
+                        "timestamp": time.time(),
+                    }))
+            except (json.JSONDecodeError, AttributeError):
+                continue
     except WebSocketDisconnect:
+        manager.disconnect(websocket, run_id)
+    except Exception:
+        logger.exception("Dashboard WebSocket failed", extra={"run_id": run_id})
         manager.disconnect(websocket, run_id)
 
 
@@ -215,58 +431,123 @@ async def websocket_endpoint(websocket: WebSocket, run_id: str, ticket: str = Qu
 # ============================================================================
 
 @app.post("/api/auth/ws-ticket")
-async def create_ws_ticket(principal: Principal = Depends(require_principal)):
-    """Issue a one-use WebSocket ticket, valid for 30 seconds."""
-    now = time.time()
-    for expired_ticket, (_, expires_at) in list(ws_tickets.items()):
-        if expires_at <= now:
-            ws_tickets.pop(expired_ticket, None)
-    if len(ws_tickets) >= 10000:
-        raise HTTPException(status_code=503, detail="WebSocket ticket capacity reached")
+async def create_ws_ticket(
+    request: WsTicketRequest,
+    principal: Principal = Depends(require_principal),
+):
+    """Issue a run-bound one-use ticket; only its hash is stored."""
+    if not principal.user_id:
+        raise HTTPException(status_code=403, detail="Durable user identity required")
+    now = datetime.now(timezone.utc)
     ticket = secrets.token_urlsafe(32)
-    ws_tickets[ticket] = (principal, now + 30)
+    ticket_hash = hashlib.sha256(ticket.encode("utf-8")).hexdigest()
+    factory = get_session_factory()
+    try:
+        async with factory() as session:
+            run = (
+                await session.execute(
+                    select(DashboardRunRecord).where(
+                        DashboardRunRecord.id == request.run_id,
+                        DashboardRunRecord.tenant_id == principal.tenant_id,
+                        DashboardRunRecord.user_id == principal.user_id,
+                    )
+                )
+            ).scalars().one_or_none()
+            if run is None:
+                raise HTTPException(status_code=404, detail="Run not found")
+            await session.execute(
+                delete(WebSocketTicketRecord).where(
+                    WebSocketTicketRecord.expires_at <= now
+                )
+            )
+            session.add(WebSocketTicketRecord(
+                ticket_hash=ticket_hash,
+                user_id=principal.user_id,
+                tenant_id=principal.tenant_id,
+                run_id=request.run_id,
+                expires_at=now + timedelta(seconds=30),
+            ))
+            await session.commit()
+    except HTTPException:
+        raise
+    except (SQLAlchemyError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail="Ticket database unavailable") from exc
     return {"ticket": ticket, "expires_in": 30}
 
 
 @app.get("/api/runs")
 async def list_runs(principal: Principal = Depends(require_principal)):
-    """List all runs."""
-    return [
-        {
-            "run_id": run_id,
-            "workflow_name": run.workflow_name,
-            "status": run.status,
-            "tasks_completed": run.metrics.tasks_completed,
-            "tasks_total": run.metrics.tasks_total,
-            "created_at": run.created_at
-        }
-        for run_id, run in runs.items()
-        if run.tenant_id == principal.tenant_id and run.user_id == principal.user_id
-    ]
+    """List durable runs owned by the authenticated user and tenant."""
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            records = (
+                await session.execute(
+                    select(DashboardRunRecord)
+                    .where(
+                        DashboardRunRecord.tenant_id == principal.tenant_id,
+                        DashboardRunRecord.user_id == principal.user_id,
+                    )
+                    .order_by(DashboardRunRecord.created_at.desc())
+                    .limit(100)
+                )
+            ).scalars().all()
+    except (SQLAlchemyError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail="Run database unavailable") from exc
+
+    response = []
+    for record in records:
+        snapshot = record.snapshot if isinstance(record.snapshot, dict) else {}
+        metrics = snapshot.get("metrics", {})
+        if not isinstance(metrics, dict):
+            metrics = {}
+        created_at = record.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        response.append({
+            "run_id": record.id,
+            "workflow_name": record.workflow_name,
+            "status": record.status,
+            "tasks_completed": metrics.get("tasks_completed", 0),
+            "tasks_total": metrics.get("tasks_total", 0),
+            "created_at": created_at.timestamp(),
+        })
+    return response
 
 
 @app.get("/api/run/{run_id}")
 async def get_run(run_id: str, principal: Principal = Depends(require_principal)):
-    """Get run details."""
-    if (
-        run_id not in runs
-        or runs[run_id].tenant_id != principal.tenant_id
-        or runs[run_id].user_id != principal.user_id
-    ):
+    """Get a persisted run snapshot, scoped to its owner."""
+    try:
+        record = await _load_run_record(
+            run_id, tenant_id=principal.tenant_id, user_id=principal.user_id or ""
+        )
+    except (SQLAlchemyError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail="Run database unavailable") from exc
+    if record is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    return get_run_dag(run_id)
+    run = runs.get(run_id)
+    if run is None or run.tenant_id != principal.tenant_id or run.user_id != principal.user_id:
+        run = _deserialize_run(record)
+        runs[run_id] = run
+    return _run_to_dag(run)
 
 
 @app.get("/api/run/{run_id}/metrics")
 async def get_run_metrics(run_id: str, principal: Principal = Depends(require_principal)):
-    """Get run metrics."""
-    if (
-        run_id not in runs
-        or runs[run_id].tenant_id != principal.tenant_id
-        or runs[run_id].user_id != principal.user_id
-    ):
+    """Get persisted run metrics, scoped to its owner."""
+    try:
+        record = await _load_run_record(
+            run_id, tenant_id=principal.tenant_id, user_id=principal.user_id or ""
+        )
+    except (SQLAlchemyError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail="Run database unavailable") from exc
+    if record is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    run = runs[run_id]
+    run = runs.get(run_id)
+    if run is None or run.tenant_id != principal.tenant_id or run.user_id != principal.user_id:
+        run = _deserialize_run(record)
+        runs[run_id] = run
     return asdict(run.metrics)
 
 
@@ -361,7 +642,9 @@ async def start_run(workflow: dict, principal: Principal = Depends(require_princ
     Start a new run and return run_id.
     """
     require_role(principal, "developer", "editor", "admin", "owner")
-    run_id = str(uuid.uuid4())[:8]
+    if not principal.user_id:
+        raise HTTPException(status_code=403, detail="Durable user identity required")
+    run_id = str(uuid.uuid4())
     workflow_name = workflow.get("name", "unnamed")
     tasks = workflow.get("tasks", [])
 
@@ -392,17 +675,24 @@ async def start_run(workflow: dict, principal: Principal = Depends(require_princ
     estimated_time_ms = parallel_groups * 5000
     estimated_cost_usd = len(dag_nodes) * 0.005
 
-    # Create run state
-    runs[run_id] = RunState(
+    # Create and persist run state before announcing or executing it.
+    run = RunState(
         run_id=run_id,
         workflow_name=workflow_name,
         tenant_id=principal.tenant_id,
         user_id=principal.user_id,
         tasks=dag_nodes,
         estimated_time_ms=estimated_time_ms,
-        estimated_cost_usd=estimated_cost_usd
+        estimated_cost_usd=estimated_cost_usd,
     )
-    runs[run_id].metrics.tasks_total = len(dag_nodes)
+    run.metrics.tasks_total = len(dag_nodes)
+    try:
+        await _persist_run(run, create=True)
+    except (SQLAlchemyError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail="Run database unavailable") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    runs[run_id] = run
 
     # Broadcast run start
     await manager.broadcast(run_id, WSMessage(
@@ -417,7 +707,9 @@ async def start_run(workflow: dict, principal: Principal = Depends(require_princ
     ))
 
     # Start async execution
-    asyncio.create_task(execute_run(run_id, dag_nodes, dag_edges))
+    task = asyncio.create_task(execute_run(run_id, dag_nodes, dag_edges))
+    run_tasks[run_id] = task
+    task.add_done_callback(lambda completed, rid=run_id: _forget_run_task(rid, completed))
 
     return {"run_id": run_id, "status": "started"}
 
@@ -425,6 +717,11 @@ async def start_run(workflow: dict, principal: Principal = Depends(require_princ
 # ============================================================================
 # Helper Functions
 # ============================================================================
+
+def _forget_run_task(run_id: str, task: asyncio.Task) -> None:
+    if run_tasks.get(run_id) is task:
+        run_tasks.pop(run_id, None)
+
 
 def calculate_parallel_groups(edges: list, total_nodes: int) -> int:
     """Calculate number of parallel execution groups."""
@@ -436,131 +733,116 @@ def calculate_parallel_groups(edges: list, total_nodes: int) -> int:
 
 
 def get_run_dag(run_id: str) -> dict:
-    """Get DAG representation of a run."""
-    run = runs[run_id]
-
-    nodes = []
-    for task in run.tasks.values():
-        nodes.append({
-            "id": task.id,
-            "type": "task",
-            "data": {
-                "label": task.name,
-                "provider": task.provider,
-                "model": task.model,
-                "status": task.status.value,
-                "cost_usd": task.cost_usd,
-                "tokens": task.input_tokens + task.output_tokens
-            }
-        })
-
-    edges = []
-    for task in run.tasks.values():
-        for dep in task.dependencies:
-            edges.append({
-                "source": dep,
-                "target": task.id,
-                "type": "default"
-            })
-
-    return {
-        "run_id": run_id,
-        "workflow_name": run.workflow_name,
-        "status": run.status,
-        "nodes": nodes,
-        "edges": edges,
-        "metrics": asdict(run.metrics),
-        "estimated_time_ms": run.estimated_time_ms,
-        "estimated_cost_usd": run.estimated_cost_usd
-    }
+    """Get the current in-process DAG representation of a persisted run."""
+    return _run_to_dag(runs[run_id])
 
 
 async def execute_run(run_id: str, dag_nodes: dict, dag_edges: list):
-    """Execute a run and broadcast events."""
-    run = runs[run_id]
-    run.status = "running"
+    """Execute a run and persist each durable state transition."""
+    run = runs.get(run_id)
+    if run is None:
+        return
+    started_at = time.time()
+    completed: set[str] = set()
+    pending: set[str] = set(run.tasks.keys())
 
-    # Simple topological sort execution
-    completed = set()
-    pending = set(dag_nodes.keys())
+    try:
+        run.status = "running"
+        await _persist_run(run)
 
-    while pending:
-        # Find tasks with all dependencies completed
-        ready = []
-        for task_id in pending:
-            deps = dag_nodes[task_id].dependencies
-            if all(d in completed for d in deps):
-                ready.append(task_id)
+        while pending:
+            ready = []
+            for task_id in pending:
+                deps = run.tasks[task_id].dependencies
+                if all(dependency in completed for dependency in deps):
+                    ready.append(task_id)
 
-        if not ready:
-            # Deadlock or all blocked
-            break
+            if not ready:
+                run.status = "error"
+                break
 
-        # Execute ready tasks in parallel
-        for task_id in ready:
-            task = dag_nodes[task_id]
+            for task_id in ready:
+                task = run.tasks[task_id]
+                task.status = TaskStatus.RUNNING
+                task.start_time = time.time()
+                run.metrics.parallelism = len(ready)
+                await _persist_run(run)
 
-            # Broadcast task start
-            await manager.broadcast(run_id, WSMessage(
-                type=WSMessageType.TASK_START,
-                data={
-                    "task": task_id,
-                    "provider": task.provider,
-                    "model": task.model
-                }
-            ))
+                await manager.broadcast(run_id, WSMessage(
+                    type=WSMessageType.TASK_START,
+                    data={
+                        "task": task_id,
+                        "provider": task.provider,
+                        "model": task.model,
+                    },
+                ))
 
-            # Update state
-            task.status = TaskStatus.RUNNING
-            task.start_time = time.time()
-            run.metrics.parallelism = len(ready)
+                # Simulated execution placeholder; replace with actual handler dispatch.
+                await asyncio.sleep(0.5)
 
-            # Simulate execution (replace with actual execution)
-            await asyncio.sleep(0.5)  # Simulated delay
+                task.status = TaskStatus.DONE
+                task.end_time = time.time()
+                task.output_tokens = 1000
+                task.cost_usd = 0.002
+                pending.remove(task_id)
+                completed.add(task_id)
+                run.metrics.tasks_completed += 1
+                run.metrics.total_cost_usd += task.cost_usd
+                run.metrics.total_tokens += task.input_tokens + task.output_tokens
 
-            # Complete task
-            task.status = TaskStatus.DONE
-            task.end_time = time.time()
-            task.output_tokens = 1000
-            task.cost_usd = 0.002
-            pending.remove(task_id)
-            completed.add(task_id)
+                await _persist_run(run)
+                await manager.broadcast(run_id, WSMessage(
+                    type=WSMessageType.TASK_END,
+                    data={
+                        "task": task_id,
+                        "tokens": task.input_tokens + task.output_tokens,
+                        "cost_usd": task.cost_usd,
+                        "duration_ms": (task.end_time - task.start_time) * 1000,
+                    },
+                ))
+                await manager.broadcast(run_id, WSMessage(
+                    type=WSMessageType.METRIC_UPDATE,
+                    data=asdict(run.metrics),
+                ))
 
-            # Update metrics
-            run.metrics.tasks_completed += 1
-            run.metrics.total_cost_usd += task.cost_usd
-            run.metrics.total_tokens += task.input_tokens + task.output_tokens
-
-            # Broadcast task end
-            await manager.broadcast(run_id, WSMessage(
-                type=WSMessageType.TASK_END,
-                data={
-                    "task": task_id,
-                    "tokens": task.input_tokens + task.output_tokens,
-                    "cost_usd": task.cost_usd,
-                    "duration_ms": (task.end_time - task.start_time) * 1000
-                }
-            ))
-
-            # Broadcast metric update
-            await manager.broadcast(run_id, WSMessage(
-                type=WSMessageType.METRIC_UPDATE,
-                data=asdict(run.metrics)
-            ))
-
-    # Run complete
-    run.status = "completed"
-    run.metrics.total_time_ms = (time.time() - run.created_at) * 1000
-
-    await manager.broadcast(run_id, WSMessage(
-        type=WSMessageType.RUN_END,
-        data={
-            "run_id": run_id,
-            "status": "completed",
-            "total_time_ms": run.metrics.total_time_ms,
-            "total_cost_usd": run.metrics.total_cost_usd
-        }
-    ))
+        if run.status != "error":
+            run.status = "completed"
+        run.metrics.total_time_ms = (time.time() - started_at) * 1000
+        await _persist_run(run)
+        await manager.broadcast(run_id, WSMessage(
+            type=WSMessageType.RUN_END,
+            data={
+                "run_id": run_id,
+                "status": run.status,
+                "total_time_ms": run.metrics.total_time_ms,
+                "total_cost_usd": run.metrics.total_cost_usd,
+            },
+        ))
+    except asyncio.CancelledError:
+        run.status = "cancelled"
+        run.metrics.total_time_ms = (time.time() - started_at) * 1000
+        try:
+            await _persist_run(run)
+        except Exception:
+            logger.exception("Could not persist cancelled dashboard run", extra={"run_id": run_id})
+        raise
+    except Exception:
+        run.status = "error"
+        run.metrics.total_time_ms = (time.time() - started_at) * 1000
+        logger.exception("Dashboard run execution failed", extra={"run_id": run_id})
+        try:
+            await _persist_run(run)
+        except Exception:
+            logger.exception("Could not persist failed dashboard run", extra={"run_id": run_id})
+        await manager.broadcast(run_id, WSMessage(
+            type=WSMessageType.RUN_END,
+            data={
+                "run_id": run_id,
+                "status": "error",
+                "total_time_ms": run.metrics.total_time_ms,
+                "total_cost_usd": run.metrics.total_cost_usd,
+            },
+        ))
 
 
 # ============================================================================
@@ -569,7 +851,7 @@ async def execute_run(run_id: str, dag_nodes: dict, dag_edges: list):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "active_runs": len(runs)}
+    return {"status": "ok", "active_runs": len(run_tasks)}
 
 
 @app.get("/")
