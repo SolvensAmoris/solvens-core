@@ -454,7 +454,7 @@ class RBACManager:
             "email": stored_user.email,
             "team_id": stored_user.team_id,
             "role": stored_user.role.value,
-            "exp": datetime.utcnow() + timedelta(hours=expires_hours),
+            "exp": datetime.utcnow() + timedelta(hours=min(max(expires_hours, 1), 1)),
         }
         return jwt.encode(payload, self._get_secret(), algorithm="HS256")
     
@@ -484,4 +484,6 @@ class RBACManager:
         secret = os.getenv("SOLVENS_SECRET_KEY")
         if not secret:
             raise RuntimeError("SOLVENS_SECRET_KEY must be configured; refusing insecure JWT fallback")
+        if len(secret.encode("utf-8")) < 32:
+            raise RuntimeError("SOLVENS_SECRET_KEY must contain at least 32 bytes")
         return secret
