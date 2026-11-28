@@ -252,7 +252,7 @@ def render_cosmos_visualization():
             </defs>
         </svg>
     </div>
-    ''', unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
     
     if st.button("🚀 Open Full Visualizer"):
         st.info("Run `python -m solvens.cosmos.visualizer.web_preview` to open the interactive visualizer")
