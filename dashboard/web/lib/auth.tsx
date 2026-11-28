@@ -63,7 +63,7 @@ function getManager(): UserManager {
     loadUserInfo: false,
     automaticSilentRenew: false,
     // Interaction state and tokens stay in memory, not localStorage/sessionStorage.
-    stateStore: new WebStorageStateStore({ store: new InMemoryWebStorage() }),
+    stateStore: new WebStorageStateStore({ store: window.sessionStorage }),
     userStore: new WebStorageStateStore({ store: new InMemoryWebStorage() }),
   });
   return manager;
@@ -125,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const headers = new Headers(init.headers);
       headers.set("Authorization", `Bearer ${token}`);
       const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const response = await fetch(`${base.replace(/\\/$/, "")}${path}`, {
+      const response = await fetch(`${base}${path}`, {
         ...init,
         headers,
       });
