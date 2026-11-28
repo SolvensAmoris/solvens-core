@@ -5,20 +5,26 @@ FastAPI + WebSockets for real-time DAG visualization.
 """
 
 import asyncio
+import hashlib
 import json
+import logging
 import time
 import uuid
 import secrets
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, select
+from sqlalchemy.exc import SQLAlchemyError
 from security.oidc import Principal, require_principal, require_role
+from solvens.persistence.database import get_session_factory
+from solvens.persistence.models import DashboardRunRecord, WebSocketTicketRecord
 
 
 # ============================================================================
@@ -133,13 +139,208 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # Run Storage
 # ============================================================================
 
 runs: dict[str, RunState] = {}
-ws_tickets: dict[str, tuple[Principal, float]] = {}
+ws_tickets: dict[str, tuple[Principal, float]] = {}  # legacy test hook; never stores live tickets
+
+
+class WsTicketRequest(BaseModel):
+    run_id: str = Field(min_length=1, max_length=128)
+
+
+def _serialize_run(run: RunState) -> dict:
+    return {
+        "run_id": run.run_id,
+        "workflow_name": run.workflow_name,
+        "tenant_id": run.tenant_id,
+        "user_id": run.user_id,
+        "status": run.status,
+        "tasks": {
+            task_id: {
+                "id": task.id,
+                "name": task.name,
+                "provider": task.provider,
+                "model": task.model,
+                "status": task.status.value,
+                "start_time": task.start_time,
+                "end_time": task.end_time,
+                "input_tokens": task.input_tokens,
+                "output_tokens": task.output_tokens,
+                "cost_usd": task.cost_usd,
+                "dependencies": list(task.dependencies),
+                "logs": list(task.logs),
+            }
+            for task_id, task in run.tasks.items()
+        },
+        "metrics": asdict(run.metrics),
+        "created_at": run.created_at,
+        "estimated_time_ms": run.estimated_time_ms,
+        "estimated_cost_usd": run.estimated_cost_usd,
+    }
+
+
+def _deserialize_run(record: DashboardRunRecord) -> RunState:
+    snapshot = record.snapshot if isinstance(record.snapshot, dict) else {}
+    tasks: dict[str, TaskNode] = {}
+    raw_tasks = snapshot.get("tasks", {})
+    if isinstance(raw_tasks, dict):
+        for task_id, raw in raw_tasks.items():
+            if not isinstance(raw, dict):
+                continue
+            try:
+                task_status = TaskStatus(raw.get("status", "pending"))
+            except ValueError:
+                task_status = TaskStatus.ERROR
+            tasks[str(task_id)] = TaskNode(
+                id=str(raw.get("id", task_id)),
+                name=str(raw.get("name", task_id)),
+                provider=str(raw.get("provider", "unknown")),
+                model=str(raw.get("model", "default")),
+                status=task_status,
+                start_time=raw.get("start_time"),
+                end_time=raw.get("end_time"),
+                input_tokens=int(raw.get("input_tokens", 0)),
+                output_tokens=int(raw.get("output_tokens", 0)),
+                cost_usd=float(raw.get("cost_usd", 0.0)),
+                dependencies=list(raw.get("dependencies", [])),
+                logs=list(raw.get("logs", [])),
+            )
+    raw_metrics = snapshot.get("metrics", {})
+    if not isinstance(raw_metrics, dict):
+        raw_metrics = {}
+    metric_fields = RunMetrics.__dataclass_fields__.keys()
+    metrics = RunMetrics(**{key: value for key, value in raw_metrics.items() if key in metric_fields})
+    created_at = snapshot.get("created_at")
+    if not isinstance(created_at, (int, float)):
+        created_at = record.created_at.timestamp()
+    return RunState(
+        run_id=record.id,
+        workflow_name=record.workflow_name,
+        tenant_id=record.tenant_id,
+        user_id=record.user_id,
+        status=record.status,
+        tasks=tasks,
+        metrics=metrics,
+        created_at=float(created_at),
+        estimated_time_ms=float(snapshot.get("estimated_time_ms", 0.0)),
+        estimated_cost_usd=float(snapshot.get("estimated_cost_usd", 0.0)),
+    )
+
+
+async def _persist_run(run: RunState, *, create: bool = False) -> None:
+    if not run.user_id:
+        raise ValueError("Run requires a durable internal user ID")
+    snapshot = _serialize_run(run)
+    json.dumps(snapshot, allow_nan=False)
+    factory = get_session_factory()
+    async with factory() as session:
+        record = (
+            await session.execute(
+                select(DashboardRunRecord)
+                .where(DashboardRunRecord.id == run.run_id)
+                .with_for_update()
+            )
+        ).scalars().one_or_none()
+        if record is None:
+            if not create:
+                raise LookupError("Dashboard run record not found")
+            record = DashboardRunRecord(
+                id=run.run_id,
+                tenant_id=run.tenant_id,
+                user_id=run.user_id,
+                workflow_name=run.workflow_name,
+                status=run.status,
+                snapshot=snapshot,
+                sequence=1,
+            )
+            session.add(record)
+        else:
+            if record.tenant_id != run.tenant_id or record.user_id != run.user_id:
+                raise PermissionError("Dashboard run owner mismatch")
+            record.status = run.status
+            record.snapshot = snapshot
+            record.sequence += 1
+        await session.commit()
+
+
+async def _load_run_record(
+    run_id: str, *, tenant_id: str, user_id: str
+) -> DashboardRunRecord | None:
+    factory = get_session_factory()
+    async with factory() as session:
+        return (
+            await session.execute(
+                select(DashboardRunRecord).where(
+                    DashboardRunRecord.id == run_id,
+                    DashboardRunRecord.tenant_id == tenant_id,
+                    DashboardRunRecord.user_id == user_id,
+                )
+            )
+        ).scalars().one_or_none()
+
+
+async def _consume_ws_ticket(ticket: str, run_id: str) -> tuple[str, str] | None:
+    if not ticket or len(ticket) > 512:
+        return None
+    ticket_hash = hashlib.sha256(ticket.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc)
+    factory = get_session_factory()
+    async with factory() as session:
+        record = (
+            await session.execute(
+                select(WebSocketTicketRecord)
+                .where(
+                    WebSocketTicketRecord.ticket_hash == ticket_hash,
+                    WebSocketTicketRecord.run_id == run_id,
+                    WebSocketTicketRecord.consumed_at.is_(None),
+                    WebSocketTicketRecord.expires_at > now,
+                )
+                .with_for_update(skip_locked=True)
+            )
+        ).scalars().one_or_none()
+        if record is None:
+            await session.rollback()
+            return None
+        record.consumed_at = now
+        await session.commit()
+        return record.tenant_id, record.user_id
+
+
+def _run_to_dag(run: RunState) -> dict:
+    nodes = []
+    for task in run.tasks.values():
+        nodes.append({
+            "id": task.id,
+            "type": "task",
+            "data": {
+                "label": task.name,
+                "provider": task.provider,
+                "model": task.model,
+                "status": task.status.value,
+                "cost_usd": task.cost_usd,
+                "tokens": task.input_tokens + task.output_tokens,
+            },
+        })
+    edges = [
+        {"source": dependency, "target": task.id, "type": "default"}
+        for task in run.tasks.values()
+        for dependency in task.dependencies
+    ]
+    return {
+        "run_id": run.run_id,
+        "workflow_name": run.workflow_name,
+        "status": run.status,
+        "nodes": nodes,
+        "edges": edges,
+        "metrics": asdict(run.metrics),
+        "estimated_time_ms": run.estimated_time_ms,
+        "estimated_cost_usd": run.estimated_cost_usd,
+    }
 
 
 # ============================================================================
