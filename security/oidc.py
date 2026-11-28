@@ -65,7 +65,9 @@ def verify_access_token(token: str) -> Principal:
 
     subject = claims.get("sub")
     tenant_id = claims.get("tenant_id")
-    roles_claim = claims.get("solvens_roles", claims.get("roles", []))
+    roles_claim = claims.get("solvens_roles", [])
+    if claims.get("exp", 0) - claims.get("iat", 0) > 3600:
+        raise PermissionError("Access token lifetime exceeds one hour")
     if not isinstance(subject, str) or not subject:
         raise PermissionError("Token has no subject")
     if not isinstance(tenant_id, str) or not tenant_id:
