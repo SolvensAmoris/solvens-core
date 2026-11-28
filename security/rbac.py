@@ -257,6 +257,26 @@ class RBACManager:
             raise PermissionError("Actor identity is not authoritative")
         if actor_record.id != user_id and (actor_record.role not in (Role.ADMIN, Role.OWNER) or actor_record.team_id != self._users.get(user_id, User("", "", "")).team_id):
             raise PermissionError("Actor cannot create API keys for this user")
+        for scope in scopes:
+            if scope in ("admin:*", "*:*"):
+                if actor_record.role not in (Role.ADMIN, Role.OWNER):
+                    raise PermissionError("Only tenant administrators may issue administrative API keys")
+                continue
+            if scope.endswith(":*"):
+                resource = scope.split(":", 1)[0]
+                resource_permissions = {
+                    permission for permission in Permission
+                    if permission.value.startswith(resource + ":")
+                }
+                if not resource_permissions or not resource_permissions.issubset(ROLE_PERMISSIONS.get(actor_record.role, set())):
+                    raise PermissionError("API key wildcard exceeds actor permissions")
+                continue
+            try:
+                requested_permission = Permission(scope)
+            except ValueError as exc:
+                raise ValueError(f"Unsupported API key scope: {scope}") from exc
+            if requested_permission not in ROLE_PERMISSIONS.get(actor_record.role, set()):
+                raise PermissionError(f"Actor cannot grant scope: {scope}")
         raw_key = f"sk_solvens_{secrets.token_urlsafe(32)}"
         key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
         key_prefix = raw_key[:16]
