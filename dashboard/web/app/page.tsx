@@ -54,6 +54,19 @@ export default function Dashboard() {
           const msg = JSON.parse(event.data);
           const { type, data } = msg;
           switch (type) {
+            case "dag_update":
+              for (const node of data.nodes || []) {
+                updateTask(node.id, {
+                  status: node.data?.status,
+                  cost_usd: node.data?.cost_usd,
+                  tokens: node.data?.tokens,
+                });
+              }
+              if (data.metrics) updateMetrics(data.metrics);
+              if (data.status === "completed" || data.status === "error") {
+                addLog({ type: "run_end", message: `Run snapshot: ${data.status}` });
+              }
+              break;
             case "task_start":
               updateTask(data.task, { status: "running" });
               addLog({ type: "task_start", task: data.task, message: `Started (${data.provider})` });

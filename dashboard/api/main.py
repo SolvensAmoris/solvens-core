@@ -6,6 +6,7 @@ FastAPI + WebSockets for real-time DAG visualization.
 
 import asyncio
 import hashlib
+from contextlib import asynccontextmanager
 import json
 import logging
 import time
@@ -24,7 +25,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 from security.oidc import Principal, require_principal, require_role
 from solvens.persistence.database import get_session_factory
-from solvens.persistence.models import DashboardRunRecord, WebSocketTicketRecord
+from solvens.persistence.models import DashboardRunRecord, OutboxEventRecord, WebSocketTicketRecord
 
 
 # ============================================================================
@@ -109,34 +110,77 @@ class WSMessage:
 # ============================================================================
 
 class ConnectionManager:
-    """Manages WebSocket connections per run."""
+    """Manage owner-bound WebSockets and deduplicate snapshot sequence replay."""
 
     def __init__(self):
         self.active_connections: dict[str, list[WebSocket]] = {}
+        self.run_owners: dict[str, tuple[str, str]] = {}
+        self.last_sequence: dict[str, int] = {}
 
-    async def connect(self, websocket: WebSocket, run_id: str):
+    async def connect(
+        self,
+        websocket: WebSocket,
+        run_id: str,
+        *,
+        tenant_id: str,
+        user_id: str,
+        sequence: int,
+    ) -> None:
+        owner = (tenant_id, user_id)
+        existing_owner = self.run_owners.get(run_id)
+        if existing_owner is not None and existing_owner != owner:
+            raise PermissionError("WebSocket run owner mismatch")
         await websocket.accept()
-        if run_id not in self.active_connections:
-            self.active_connections[run_id] = []
-        self.active_connections[run_id].append(websocket)
+        self.run_owners[run_id] = owner
+        self.last_sequence[run_id] = max(self.last_sequence.get(run_id, 0), sequence)
+        self.active_connections.setdefault(run_id, []).append(websocket)
 
     def disconnect(self, websocket: WebSocket, run_id: str):
-        if run_id in self.active_connections:
-            self.active_connections[run_id].remove(websocket)
-            if not self.active_connections[run_id]:
-                del self.active_connections[run_id]
+        connections = self.active_connections.get(run_id)
+        if not connections:
+            return
+        if websocket in connections:
+            connections.remove(websocket)
+        if not connections:
+            self.active_connections.pop(run_id, None)
+            self.run_owners.pop(run_id, None)
+            self.last_sequence.pop(run_id, None)
 
     async def broadcast(self, run_id: str, message: WSMessage):
-        if run_id in self.active_connections:
-            disconnected = []
-            for connection in self.active_connections[run_id]:
-                try:
-                    await connection.send_text(message.to_json())
-                except:
-                    disconnected.append(connection)
-            for conn in disconnected:
-                self.disconnect(conn, run_id)
+        connections = self.active_connections.get(run_id)
+        if not connections:
+            return
+        disconnected = []
+        for connection in list(connections):
+            try:
+                await connection.send_text(message.to_json())
+            except Exception:
+                disconnected.append(connection)
+        for connection in disconnected:
+            self.disconnect(connection, run_id)
 
+    async def broadcast_snapshot(
+        self,
+        *,
+        run_id: str,
+        tenant_id: str,
+        user_id: str,
+        sequence: int,
+        snapshot: dict,
+    ) -> None:
+        """Fan out only newer snapshots to authenticated sockets for this tenant."""
+        if not self.active_connections.get(run_id):
+            return
+        owner = self.run_owners.get(run_id)
+        if owner is None or owner != (tenant_id, user_id):
+            return
+        if sequence <= self.last_sequence.get(run_id, 0):
+            return
+        self.last_sequence[run_id] = sequence
+        await self.broadcast(
+            run_id,
+            WSMessage(type=WSMessageType.DAG_UPDATE, data=snapshot),
+        )
 
 manager = ConnectionManager()
 logger = logging.getLogger(__name__)
@@ -265,6 +309,17 @@ async def _persist_run(run: RunState, *, create: bool = False) -> None:
             record.status = run.status
             record.snapshot = snapshot
             record.sequence += 1
+        session.add(OutboxEventRecord(
+            tenant_id=run.tenant_id,
+            aggregate_type="dashboard_run",
+            aggregate_id=run.run_id,
+            event_type="dashboard.run.snapshot",
+            payload={
+                "sequence": record.sequence,
+                "user_id": run.user_id,
+                "snapshot": _run_to_dag(run),
+            },
+        ))
         await session.commit()
 
 
@@ -347,7 +402,105 @@ def _run_to_dag(run: RunState) -> dict:
 # FastAPI App
 # ============================================================================
 
+async def _redis_stream_listener(redis_url: str) -> None:
+    """Replay Redis Stream events and fan out only newer run snapshots."""
+    from redis.asyncio import Redis
+
+    redis = Redis.from_url(redis_url, decode_responses=True)
+    last_id = "$"
+    try:
+        while True:
+            try:
+                streams = await redis.xread(
+                    {"solvens:dashboard:events": last_id},
+                    block=1000,
+                    count=100,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error("Dashboard Redis stream read failed", error=str(exc))
+                # Replay retained stream entries after reconnect; sequence guards
+                # discard stale snapshots and preserve the latest full state.
+                last_id = "0-0"
+                await asyncio.sleep(1.0)
+                continue
+
+            for _, entries in streams or []:
+                for entry_id, fields in entries:
+                    last_id = entry_id
+                    raw = fields.get("event")
+                    if not raw:
+                        continue
+                    try:
+                        event = json.loads(raw)
+                        if event.get("event_type") != "dashboard.run.snapshot":
+                            continue
+                        payload = event.get("payload", {})
+                        snapshot = payload.get("snapshot")
+                        sequence = int(payload.get("sequence", 0))
+                        run_id = event.get("aggregate_id")
+                        tenant_id = event.get("tenant_id")
+                        user_id = payload.get("user_id")
+                        if not isinstance(snapshot, dict) or not run_id or not tenant_id or not user_id:
+                            continue
+                        await manager.broadcast_snapshot(
+                            run_id=run_id,
+                            tenant_id=tenant_id,
+                            user_id=user_id,
+                            sequence=sequence,
+                            snapshot=snapshot,
+                        )
+                    except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
+                        logger.warning("Skipping malformed dashboard stream event")
+    finally:
+        await redis.aclose()
+
+
+@asynccontextmanager
+async def dashboard_lifespan(app):
+    redis_url = os.getenv("SOLVENS_REDIS_URL")
+    publisher = None
+    background_tasks: list[asyncio.Task] = []
+    if redis_url:
+        from solvens.persistence.outbox import OutboxPublisher
+
+        publisher = OutboxPublisher(
+            redis_url=redis_url,
+            max_stream_length=max(
+                100, int(os.getenv("SOLVENS_OUTBOX_MAX_STREAM_LENGTH", "50000"))
+            ),
+            poll_interval=float(os.getenv("SOLVENS_OUTBOX_POLL_INTERVAL", "0.5")),
+        )
+        background_tasks.append(
+            asyncio.create_task(publisher.run(), name="dashboard-outbox-publisher")
+        )
+        background_tasks.append(
+            asyncio.create_task(
+                _redis_stream_listener(redis_url),
+                name="dashboard-redis-stream-listener",
+            )
+        )
+    try:
+        yield
+    finally:
+        if publisher:
+            publisher.stop()
+        for task in background_tasks:
+            task.cancel()
+        await asyncio.gather(*background_tasks, return_exceptions=True)
+        if publisher:
+            await publisher.close()
+
+        active_runs = list(run_tasks.values())
+        for task in active_runs:
+            task.cancel()
+        await asyncio.gather(*active_runs, return_exceptions=True)
+        run_tasks.clear()
+
+
 app = FastAPI(
+    lifespan=dashboard_lifespan,
     title="SOLVENS CORE Dashboard API",
     description="Real-time DAG execution dashboard",
     version="1.0.0",
@@ -396,12 +549,22 @@ async def websocket_endpoint(websocket: WebSocket, run_id: str, ticket: str = Qu
         await websocket.close(code=4404)
         return
 
-    run = runs.get(run_id)
+    run = runs.get(run_id) if run_id in run_tasks else None
     if run is None or run.tenant_id != tenant_id or run.user_id != user_id:
         run = _deserialize_run(record)
         runs[run_id] = run
 
-    await manager.connect(websocket, run_id)
+    try:
+        await manager.connect(
+            websocket,
+            run_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            sequence=record.sequence,
+        )
+    except PermissionError:
+        await websocket.close(code=4403)
+        return
     try:
         await websocket.send_text(json.dumps({
             "type": "dag_update",
@@ -526,7 +689,7 @@ async def get_run(run_id: str, principal: Principal = Depends(require_principal)
         raise HTTPException(status_code=503, detail="Run database unavailable") from exc
     if record is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    run = runs.get(run_id)
+    run = runs.get(run_id) if run_id in run_tasks else None
     if run is None or run.tenant_id != principal.tenant_id or run.user_id != principal.user_id:
         run = _deserialize_run(record)
         runs[run_id] = run
@@ -544,7 +707,7 @@ async def get_run_metrics(run_id: str, principal: Principal = Depends(require_pr
         raise HTTPException(status_code=503, detail="Run database unavailable") from exc
     if record is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    run = runs.get(run_id)
+    run = runs.get(run_id) if run_id in run_tasks else None
     if run is None or run.tenant_id != principal.tenant_id or run.user_id != principal.user_id:
         run = _deserialize_run(record)
         runs[run_id] = run

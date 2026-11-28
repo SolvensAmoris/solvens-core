@@ -20,6 +20,7 @@ from solvens.api.main import app as core_api
 from solvens.persistence.models import (
     Base,
     DashboardRunRecord,
+    OutboxEventRecord,
     TenantRecord,
     UserRecord,
     WebSocketTicketRecord,
@@ -178,6 +179,32 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
         )
         self.assertEqual(metrics.status_code, 200)
         self.assertEqual(metrics.json()["tasks_completed"], 1)
+
+    def test_run_snapshot_and_outbox_events_commit_together(self):
+        created = self.client.post(
+            "/api/run",
+            headers={"Authorization": "Bearer tenant-a"},
+            json={"name": "outbox-flow", "tasks": []},
+        )
+        run_id = created.json()["run_id"]
+        self._wait_for_completed(run_id)
+
+        async def read_events():
+            async with self.factory() as session:
+                return (
+                    await session.execute(
+                        select(OutboxEventRecord)
+                        .where(OutboxEventRecord.aggregate_id == run_id)
+                        .order_by(OutboxEventRecord.id.asc())
+                    )
+                ).scalars().all()
+
+        events = asyncio.run(read_events())
+        self.assertGreaterEqual(len(events), 3)
+        sequences = [event.payload["sequence"] for event in events]
+        self.assertEqual(sequences, sorted(sequences))
+        self.assertEqual(events[-1].payload["user_id"], "db-user-a")
+        self.assertIsNone(events[-1].published_at)
 
     def test_run_listing_does_not_disclose_other_tenants(self):
         created = self.client.post(

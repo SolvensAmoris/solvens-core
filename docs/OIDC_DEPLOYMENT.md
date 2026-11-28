@@ -77,3 +77,12 @@ When `SOLVENS_DATABASE_URL` or `DATABASE_URL` is configured, the API starts one 
 Durable tasks store a JSON handler name and payload, not Python callbacks or closures. Register each handler in the application before orchestrator initialization. Claims use PostgreSQL `FOR UPDATE SKIP LOCKED`, a bounded lease, owner-bound heartbeats, and retry attempts. Expired leases are reclaimable; exhausted attempts are terminalized. Task reads and cancellation are scoped to both the authenticated tenant and internal user.
 
 Delivery is **at-least-once**, not exactly-once. A process can perform an external side effect and crash before committing its result. Durable handlers must therefore use downstream idempotency keys or otherwise make side effects safe to repeat. SQLite is useful for local tests but does not prove PostgreSQL multi-worker locking semantics.
+
+
+## Dashboard outbox and live event replay
+
+Set `SOLVENS_REDIS_URL` to enable the dashboard's transactional outbox publisher and Redis Stream listener. Run the dashboard API with database access and Redis Streams enabled. `SOLVENS_OUTBOX_MAX_STREAM_LENGTH` defaults to `50000` entries; `SOLVENS_OUTBOX_POLL_INTERVAL` defaults to `0.5` seconds.
+
+Run snapshot updates are inserted into `outbox_events` in the same transaction as the run snapshot. The publisher writes them to `solvens:dashboard:events` and marks them published only after Redis accepts the entry. Redis Stream entries include event IDs and run sequence numbers; consumers ignore duplicate or stale snapshots.
+
+Publication is at-least-once: a crash between Redis `XADD` and the database marker can publish the same event again. The sequence guard makes duplicate delivery harmless. REST and WebSocket connection setup always load the durable database snapshot, so a client reconnect does not depend on Redis Pub/Sub retaining past messages. Keep Redis Stream persistence enabled and size retention for the desired replay window.
