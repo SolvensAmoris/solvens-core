@@ -72,7 +72,8 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
         self.addCleanup(dashboard.app.dependency_overrides.clear)
         self.addCleanup(core_api.dependency_overrides.clear)
         self.client = TestClient(dashboard.app)
-        self.addCleanup(self.client.close)
+        self.client.__enter__()
+        self.addCleanup(self.client.__exit__, None, None, None)
 
     def _cleanup_db(self):
         dashboard.run_tasks.clear()
@@ -80,6 +81,18 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
         asyncio.run(self.engine.dispose())
         if os.path.exists(self.db_path):
             os.unlink(self.db_path)
+
+    def _wait_for_completed(self, run_id: str, token: str = "tenant-a", timeout: float = 4.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            response = self.client.get(
+                f"/api/run/{run_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if response.status_code == 200 and response.json()["status"] == "completed":
+                return response.json()
+            time.sleep(0.05)
+        self.fail(f"run {run_id} did not reach completed state")
 
     def _issue_ticket(self, run_id: str, token: str):
         return self.client.post(
@@ -106,6 +119,7 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
         )
         self.assertEqual(created.status_code, 200)
         run_id = created.json()["run_id"]
+        self._wait_for_completed(run_id)
 
         foreign_tenant = self.client.get(
             f"/api/run/{run_id}",
@@ -131,6 +145,7 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
         )
         self.assertEqual(created.status_code, 200)
         run_id = created.json()["run_id"]
+        self._wait_for_completed(run_id)
         dashboard.runs.clear()
 
         restored = self.client.get(
@@ -148,7 +163,7 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
         )
         self.assertEqual(created.status_code, 200)
         run_id = created.json()["run_id"]
-        time.sleep(1.2)
+        self._wait_for_completed(run_id, timeout=4.0)
         dashboard.runs.clear()
 
         restored = self.client.get(
@@ -185,6 +200,7 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
             json={"name": "ws-flow", "tasks": []},
         )
         run_id = created.json()["run_id"]
+        self._wait_for_completed(run_id)
         ticket_response = self._issue_ticket(run_id, "tenant-a")
         self.assertEqual(ticket_response.status_code, 200)
         ticket = ticket_response.json()["ticket"]
@@ -222,6 +238,7 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
             json={"name": "private-user-run", "tasks": []},
         )
         run_id = created.json()["run_id"]
+        self._wait_for_completed(run_id)
         response = self._issue_ticket(run_id, "tenant-a-other-user")
         self.assertEqual(response.status_code, 404)
 
@@ -232,6 +249,7 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
             json={"name": "tenant-a-ws", "tasks": []},
         )
         run_id = created.json()["run_id"]
+        self._wait_for_completed(run_id)
         response = self._issue_ticket(run_id, "tenant-b")
         self.assertEqual(response.status_code, 404)
 
