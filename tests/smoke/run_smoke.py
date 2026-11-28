@@ -6,7 +6,7 @@ SOLVENS CORE - Official Smoke Test
 This smoke test validates the core functionality of SOLVENS CORE
 in a quick, non-exhaustive manner.
 
-Run with: python tests/smoke_test.py
+Run with: python tests/smoke/run_smoke.py
 
 Exit codes:
     0 - PASS

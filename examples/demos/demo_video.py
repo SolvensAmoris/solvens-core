@@ -7,7 +7,7 @@ Genera un demo animado del Cosmos Visualizer y features.
 Output: Secuencia de frames para video o GIF animado.
 
 Usage:
-    python demo_video.py --format gif    # Genera GIF
+    python examples/demos/demo_video.py --format gif    # Genera GIF
     python demo_video.py --format ascii  # Imprime ASCII demo
     python demo_video.py --format video  # Genera frames para video
 """
