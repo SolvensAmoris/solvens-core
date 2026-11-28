@@ -70,6 +70,8 @@ async def heartbeat_task(
     now: datetime | None = None,
 ) -> bool:
     """Extend a lease only when the caller still owns an unexpired lease."""
+    if not 1 <= lease_seconds <= 3600:
+        raise ValueError("lease_seconds must be between 1 and 3600")
     current = now or datetime.now(timezone.utc)
     task = (
         await session.execute(
