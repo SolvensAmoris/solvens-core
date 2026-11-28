@@ -52,7 +52,7 @@ class RBACAdversarialTests(unittest.TestCase):
     def test_api_key_cannot_be_bound_to_another_tenant(self):
         with self.assertRaises((ValueError, PermissionError)):
             self.manager.create_api_key(
-                self.user.id, "cross-tenant", ["admin:*"], team_id="tenant-b", actor=self.user
+                self.user.id, "cross-tenant", ["workflow:run"], team_id="tenant-b", actor=self.user
             )
 
     def test_workflow_without_tenant_acl_is_denied(self):
