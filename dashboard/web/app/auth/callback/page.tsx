@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/lib/auth";
+import { completeSignIn, useAuth } from "@/lib/auth";
 
 export default function OidcCallback() {
   const router = useRouter();
@@ -15,27 +15,13 @@ export default function OidcCallback() {
       return;
     }
     let active = true;
-    import("oidc-client-ts").then(async ({ UserManager, WebStorageStateStore, InMemoryWebStorage }) => {
-      const authority = process.env.NEXT_PUBLIC_OIDC_AUTHORITY;
-      const clientId = process.env.NEXT_PUBLIC_OIDC_CLIENT_ID;
-      const apiScope = process.env.NEXT_PUBLIC_OIDC_API_SCOPE;
-      if (!authority || !clientId || !apiScope) throw new Error("Missing OIDC configuration");
-      const userManager = new UserManager({
-        authority,
-        client_id: clientId,
-        redirect_uri: process.env.NEXT_PUBLIC_OIDC_REDIRECT_URI || `${window.location.origin}/auth/callback`,
-        post_logout_redirect_uri: process.env.NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI || window.location.origin,
-        response_type: "code",
-        scope: `openid profile email ${apiScope}`,
-        loadUserInfo: false,
-        stateStore: new WebStorageStateStore({ store: window.sessionStorage }),
-        userStore: new WebStorageStateStore({ store: new InMemoryWebStorage() }),
+    completeSignIn()
+      .then(() => {
+        if (active) router.replace("/");
+      })
+      .catch((reason: unknown) => {
+        if (active) setError(reason instanceof Error ? reason.message : "OIDC callback failed");
       });
-      await userManager.signinRedirectCallback();
-      if (active) router.replace("/");
-    }).catch((reason: unknown) => {
-      if (active) setError(reason instanceof Error ? reason.message : "OIDC callback failed");
-    });
     return () => {
       active = false;
     };
