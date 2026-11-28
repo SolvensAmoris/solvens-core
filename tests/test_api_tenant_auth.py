@@ -3,6 +3,7 @@ import asyncio
 import hashlib
 import os
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -136,6 +137,31 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
         )
         self.assertEqual(restored.status_code, 200)
         self.assertEqual(restored.json()["run_id"], run_id)
+
+    def test_task_progress_and_metrics_survive_cache_loss(self):
+        created = self.client.post(
+            "/api/run",
+            headers={"Authorization": "Bearer tenant-a"},
+            json={"name": "durable-progress", "tasks": [{"name": "task-1"}]},
+        )
+        self.assertEqual(created.status_code, 200)
+        run_id = created.json()["run_id"]
+        time.sleep(1.2)
+        dashboard.runs.clear()
+
+        restored = self.client.get(
+            f"/api/run/{run_id}",
+            headers={"Authorization": "Bearer tenant-a"},
+        )
+        self.assertEqual(restored.status_code, 200)
+        self.assertEqual(restored.json()["status"], "completed")
+        self.assertEqual(restored.json()["nodes"][0]["data"]["status"], "done")
+        metrics = self.client.get(
+            f"/api/run/{run_id}/metrics",
+            headers={"Authorization": "Bearer tenant-a"},
+        )
+        self.assertEqual(metrics.status_code, 200)
+        self.assertEqual(metrics.json()["tasks_completed"], 1)
 
     def test_run_listing_does_not_disclose_other_tenants(self):
         self.client.post(
