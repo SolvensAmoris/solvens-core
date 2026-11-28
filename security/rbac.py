@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 import hashlib
 import secrets
 import jwt
+import os
 
 
 class Role(str, Enum):
@@ -174,7 +175,31 @@ class RBACManager:
         self._workflow_acls: dict[str, WorkflowACL] = {}
     
     # User Management
-    def create_user(self, email: str, team_id: str, role: Role = Role.DEVELOPER) -> User:
+    def _require_bootstrap(self, token: Optional[str]) -> None:
+        expected = os.getenv("SOLVENS_RBAC_BOOTSTRAP_TOKEN", "")
+        if not expected or not token or not secrets.compare_digest(token, expected):
+            raise PermissionError("Valid SOLVENS_RBAC_BOOTSTRAP_TOKEN required")
+
+    def _require_admin_actor(self, actor: Optional[User], team_id: Optional[str] = None, owner_only: bool = False) -> User:
+        if actor is None:
+            raise PermissionError("Authenticated actor is required")
+        stored = self._users.get(actor.id)
+        if stored is None or (stored.email, stored.team_id, stored.role) != (actor.email, actor.team_id, actor.role):
+            raise PermissionError("Actor identity is not authoritative")
+        allowed = (Role.OWNER,) if owner_only else (Role.OWNER, Role.ADMIN)
+        if stored.role not in allowed or (team_id is not None and stored.team_id != team_id):
+            raise PermissionError("Actor is not authorized for this tenant operation")
+        return stored
+
+    def create_user(self, email: str, team_id: str, role: Role = Role.DEVELOPER, *, actor: Optional[User] = None, bootstrap_token: Optional[str] = None) -> User:
+        if not self._users:
+            self._require_bootstrap(bootstrap_token)
+            if role != Role.OWNER:
+                raise PermissionError("The first provisioned user must be the tenant OWNER")
+        else:
+            authorized_actor = self._require_admin_actor(actor, team_id)
+            if authorized_actor.role == Role.ADMIN and role in (Role.ADMIN, Role.OWNER):
+                raise PermissionError("ADMIN cannot assign ADMIN or OWNER")
         user = User(
             id=self._generate_id(),
             email=email,
@@ -194,7 +219,10 @@ class RBACManager:
         return None
     
     # Team Management
-    def create_team(self, name: str, monthly_budget: float = 500.00) -> Team:
+    def create_team(self, name: str, monthly_budget: float = 500.00, *, bootstrap_token: Optional[str] = None) -> Team:
+        if self._teams or self._users:
+            raise PermissionError("Tenant creation is a platform bootstrap operation")
+        self._require_bootstrap(bootstrap_token)
         team = Team(
             id=self._generate_id(),
             name=name,
@@ -214,6 +242,7 @@ class RBACManager:
         scopes: list[str],
         team_id: Optional[str] = None,
         expires_days: Optional[int] = None,
+        *, actor: Optional[User] = None,
     ) -> tuple[APIKey, str]:
         """
         Create a new API key.
@@ -221,6 +250,13 @@ class RBACManager:
         Returns:
             Tuple of (APIKey object, raw key - store securely!)
         """
+        if actor is None:
+            raise PermissionError("Authenticated actor is required to create API keys")
+        actor_record = self._users.get(actor.id)
+        if actor_record is None or (actor_record.email, actor_record.team_id, actor_record.role) != (actor.email, actor.team_id, actor.role):
+            raise PermissionError("Actor identity is not authoritative")
+        if actor_record.id != user_id and (actor_record.role not in (Role.ADMIN, Role.OWNER) or actor_record.team_id != self._users.get(user_id, User("", "", "")).team_id):
+            raise PermissionError("Actor cannot create API keys for this user")
         raw_key = f"sk_solvens_{secrets.token_urlsafe(32)}"
         key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
         key_prefix = raw_key[:16]
@@ -265,8 +301,18 @@ class RBACManager:
         
         return None
     
-    def revoke_api_key(self, key_id: str) -> bool:
-        """Revoke an API key."""
+    def revoke_api_key(self, key_id: str, *, actor: Optional[User] = None) -> bool:
+        """Revoke an API key after verifying the actor."""
+        stored_key = self._api_keys.get(key_id)
+        if stored_key is None:
+            return False
+        if actor is None:
+            raise PermissionError("Authenticated actor is required")
+        actor_record = self._users.get(actor.id)
+        if actor_record is None or (actor_record.email, actor_record.team_id, actor_record.role) != (actor.email, actor.team_id, actor.role):
+            raise PermissionError("Actor identity is not authoritative")
+        if actor_record.id != stored_key.user_id and (actor_record.role not in (Role.ADMIN, Role.OWNER) or actor_record.team_id != stored_key.team_id):
+            raise PermissionError("Actor cannot revoke this API key")
         if key_id in self._api_keys:
             self._api_keys[key_id].is_active = False
             return True
@@ -357,8 +403,10 @@ class RBACManager:
         public: bool = False,
         allowed_users: list[str] = None,
         allowed_teams: list[str] = None,
+        *, actor: Optional[User] = None,
     ) -> WorkflowACL:
         """Set access control for a workflow."""
+        self._require_admin_actor(actor, team_id)
         acl = WorkflowACL(
             workflow_id=workflow_id,
             team_id=team_id,
