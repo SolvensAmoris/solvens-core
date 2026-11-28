@@ -9,6 +9,7 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
+from urllib.parse import urlparse
 
 import jwt
 from fastapi import HTTPException, Request, status, Depends
@@ -44,11 +45,16 @@ def _jwks_client() -> PyJWKClient:
 def verify_access_token(token: str) -> Principal:
     issuer = os.getenv("SOLVENS_OIDC_ISSUER", "")
     audience = os.getenv("SOLVENS_OIDC_AUDIENCE", "").strip()
-    if not issuer or not audience or not os.getenv("SOLVENS_OIDC_JWKS_URI"):
+    jwks_uri = os.getenv("SOLVENS_OIDC_JWKS_URI", "").strip()
+    if not issuer or not audience or not jwks_uri:
         raise OIDCConfigurationError(
             "Configure SOLVENS_OIDC_ISSUER, SOLVENS_OIDC_AUDIENCE and "
             "SOLVENS_OIDC_JWKS_URI before exposing protected APIs"
         )
+    if urlparse(issuer).scheme != "https" or urlparse(jwks_uri).scheme != "https":
+        raise OIDCConfigurationError("OIDC issuer and JWKS endpoints must use HTTPS")
+    if not isinstance(token, str) or not token or len(token) > 16384:
+        raise PermissionError("Malformed access token")
     try:
         signing_key = _jwks_client().get_signing_key_from_jwt(token).key
         claims: dict[str, Any] = jwt.decode(
@@ -70,12 +76,13 @@ def verify_access_token(token: str) -> Principal:
         raise PermissionError("Access token lifetime exceeds one hour")
     if not isinstance(subject, str) or not subject:
         raise PermissionError("Token has no subject")
-    if not isinstance(tenant_id, str) or not tenant_id:
-        raise PermissionError("Token has no verified tenant_id claim")
+    if not isinstance(tenant_id, str) or not tenant_id or len(tenant_id) > 128 or tenant_id.strip() != tenant_id:
+        raise PermissionError("Token has no valid verified tenant_id claim")
     if isinstance(roles_claim, str):
         roles_claim = [roles_claim]
-    if not isinstance(roles_claim, list) or any(not isinstance(r, str) for r in roles_claim):
-        raise PermissionError("Token roles claim is malformed")
+    allowed_roles = {"viewer", "developer", "editor", "auditor", "admin", "owner"}
+    if not isinstance(roles_claim, list) or any(not isinstance(r, str) or r.lower() not in allowed_roles for r in roles_claim):
+        raise PermissionError("Token roles claim is malformed or contains an unknown role")
     return Principal(
         subject=subject,
         tenant_id=tenant_id,
