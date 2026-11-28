@@ -67,8 +67,10 @@ class DurableTaskWorker:
         """Persist a serializable task; duplicate idempotency keys return same ID."""
         if handler_name not in self.handlers:
             raise ValueError(f"Unregistered durable handler: {handler_name}")
-        if not tenant_id or not user_id:
-            raise ValueError("tenant_id and user_id are required")
+        if not tenant_id or not user_id or len(tenant_id) > 36 or len(user_id) > 36:
+            raise ValueError("tenant_id and user_id must contain 1..36 characters")
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be a JSON object")
         if not -100 <= priority <= 100:
             raise ValueError("priority must be between -100 and 100")
         if not 1 <= max_attempts <= 20:
@@ -146,7 +148,7 @@ class DurableTaskWorker:
                 "id": record.id,
                 "tenant_id": record.tenant_id,
                 "user_id": record.user_id,
-                "payload": dict(record.payload or {}),
+                "payload": record.payload if isinstance(record.payload, dict) else {},
                 "attempt_count": record.attempt_count,
                 "max_attempts": record.max_attempts,
             }
