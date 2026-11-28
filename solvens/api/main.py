@@ -286,7 +286,7 @@ async def create_task(request: TaskRequest, principal: Principal = Depends(requi
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, RuntimeError) as exc:
             raise HTTPException(status_code=503, detail="Task database unavailable") from exc
         return TaskResponse(
             id=task_id,
@@ -318,7 +318,7 @@ async def get_task(task_id: str, principal: Principal = Depends(require_principa
     if not orchestrator:
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
 
-    if orchestrator.durable_enabled:
+    if durable_mode:
         try:
             factory = get_session_factory()
             async with factory() as session:
@@ -372,7 +372,7 @@ async def list_tasks(
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
     limit = max(1, min(limit, 1000))
 
-    if orchestrator.durable_enabled:
+    if durable_mode:
         try:
             factory = get_session_factory()
             async with factory() as session:
@@ -437,7 +437,7 @@ async def cancel_task(task_id: str, principal: Principal = Depends(require_princ
     if not orchestrator:
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
 
-    if orchestrator.durable_enabled:
+    if durable_mode:
         if not orchestrator.durable_enabled:
             raise HTTPException(status_code=503, detail="Durable task workers are disabled")
         if not principal.user_id:
