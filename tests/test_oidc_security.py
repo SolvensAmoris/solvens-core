@@ -46,7 +46,7 @@ class OIDCValidationTests(unittest.TestCase):
         claims = {
             "sub": "user-123",
             "tenant_id": "tenant-a",
-            "roles": ["developer"],
+            "solvens_roles": ["developer"],
             "iss": "https://id.example.test/",
             "aud": "solvens-api",
             "iat": int(time.time()),
@@ -75,7 +75,7 @@ class OIDCValidationTests(unittest.TestCase):
 
     def test_untrusted_role_string_shape_is_rejected(self):
         with self.assertRaises(PermissionError):
-            oidc.verify_access_token(self._token(roles={"admin": True}))
+            oidc.verify_access_token(self._token(solvens_roles={"admin": True}))
 
 
 if __name__ == "__main__":
