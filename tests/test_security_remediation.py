@@ -41,6 +41,13 @@ class RBACTestTests(unittest.TestCase):
         manager.set_workflow_acl("foreign-workflow", "tenant-b", public=True)
         self.assertFalse(manager.can_run_workflow(owner, "foreign-workflow"))
 
+    def test_user_cannot_forge_privileged_role(self):
+        from security.rbac import User
+        manager = RBACManager()
+        developer = manager.create_user("dev@example.test", "tenant-a", Role.DEVELOPER)
+        forged = User(id=developer.id, email=developer.email, team_id=developer.team_id, role=Role.OWNER)
+        self.assertFalse(manager.can_run_workflow(forged, "any-workflow"))
+
 
 class AuditChainTests(unittest.TestCase):
     def test_chain_verifies_and_detects_metadata_tampering(self):
