@@ -125,7 +125,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const headers = new Headers(init.headers);
       headers.set("Authorization", `Bearer ${token}`);
       const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const response = await fetch(`${base}${path}`, {
+      const apiBase = base.endsWith("/") ? base.slice(0, -1) : base;
+      const response = await fetch(`${apiBase}${path}`, {
         ...init,
         headers,
       });
