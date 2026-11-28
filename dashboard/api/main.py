@@ -400,7 +400,92 @@ def _run_to_dag(run: RunState) -> dict:
 # FastAPI App
 # ============================================================================
 
+async def _redis_stream_listener(redis_url: str) -> None:
+    """Replay Redis Stream events and fan out only newer run snapshots."""
+    from redis.asyncio import Redis
+
+    redis = Redis.from_url(redis_url, decode_responses=True)
+    last_id = "$"
+    try:
+        while True:
+            try:
+                streams = await redis.xread(
+                    {"solvens:dashboard:events": last_id},
+                    block=1000,
+                    count=100,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error("Dashboard Redis stream read failed", error=str(exc))
+                await asyncio.sleep(1.0)
+                continue
+
+            for _, entries in streams or []:
+                for entry_id, fields in entries:
+                    last_id = entry_id
+                    raw = fields.get("event")
+                    if not raw:
+                        continue
+                    try:
+                        event = json.loads(raw)
+                        if event.get("event_type") != "dashboard.run.snapshot":
+                            continue
+                        payload = event.get("payload", {})
+                        snapshot = payload.get("snapshot")
+                        sequence = int(payload.get("sequence", 0))
+                        run_id = event.get("aggregate_id")
+                        tenant_id = event.get("tenant_id")
+                        if not isinstance(snapshot, dict) or not run_id or not tenant_id:
+                            continue
+                        await manager.broadcast_snapshot(
+                            run_id=run_id,
+                            tenant_id=tenant_id,
+                            sequence=sequence,
+                            snapshot=snapshot,
+                        )
+                    except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
+                        logger.warning("Skipping malformed dashboard stream event")
+
+
+@asynccontextmanager
+async def dashboard_lifespan(app):
+    redis_url = os.getenv("SOLVENS_REDIS_URL")
+    publisher = None
+    background_tasks: list[asyncio.Task] = []
+    if redis_url:
+        from solvens.persistence.outbox import OutboxPublisher
+
+        publisher = OutboxPublisher(redis_url=redis_url)
+        background_tasks.append(
+            asyncio.create_task(publisher.run(), name="dashboard-outbox-publisher")
+        )
+        background_tasks.append(
+            asyncio.create_task(
+                _redis_stream_listener(redis_url),
+                name="dashboard-redis-stream-listener",
+            )
+        )
+    try:
+        yield
+    finally:
+        if publisher:
+            publisher.stop()
+        for task in background_tasks:
+            task.cancel()
+        await asyncio.gather(*background_tasks, return_exceptions=True)
+        if publisher:
+            await publisher.close()
+
+        active_runs = list(run_tasks.values())
+        for task in active_runs:
+            task.cancel()
+        await asyncio.gather(*active_runs, return_exceptions=True)
+        run_tasks.clear()
+
+
 app = FastAPI(
+    lifespan=dashboard_lifespan,
     title="SOLVENS CORE Dashboard API",
     description="Real-time DAG execution dashboard",
     version="1.0.0",
