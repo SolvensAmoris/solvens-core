@@ -445,20 +445,21 @@ def test_governance():
     try:
         from cosmos.security.rbac import RBAC, Role, Permission
         
+        import os
+        os.environ["SOLVENS_RBAC_BOOTSTRAP_TOKEN"] = "test-bootstrap-secret"
         rbac = RBAC()
         rbac._users = {}  # Reset
         
-        # Create team
-        team = rbac.create_team("Test Team")
+        # Create tenant and bootstrap owner
+        team = rbac.create_team("Test Team", bootstrap_token="test-bootstrap-secret")
+        owner = rbac.create_user("owner@test.com", team.id, Role.OWNER, bootstrap_token="test-bootstrap-secret")
         
-        # Create viewer user
-        viewer_user = rbac.create_user("viewer@test.com", team.id, Role.VIEWER)
-        
-        # Create developer user
-        dev_user = rbac.create_user("dev@test.com", team.id, Role.DEVELOPER)
+        # Create viewer and developer users through the tenant owner
+        viewer_user = rbac.create_user("viewer@test.com", team.id, Role.VIEWER, actor_id=owner.id)
+        dev_user = rbac.create_user("dev@test.com", team.id, Role.DEVELOPER, actor_id=owner.id)
         
         # Create workflow ACL - private, but team members can access
-        rbac.set_workflow_acl("test-workflow", team.id, is_public=False, allowed_teams=[team.id])
+        rbac.set_workflow_acl("test-workflow", team.id, is_public=False, allowed_teams=[team.id], actor_id=owner.id)
         
         # Check viewer CANNOT run (no WORKFLOW_RUN permission)
         can_run_viewer = rbac.can_run_workflow(viewer_user, "test-workflow")
@@ -518,6 +519,7 @@ def test_governance():
             user_id=viewer_user.id,
             name="Test Key",
             scopes=["workflow:view", "provider:view"],
+            actor_id=viewer_user.id,
         )
         
         # Check viewer key CANNOT run (no workflow:run scope)
