@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from security.oidc import Principal
 from dashboard.api import main as dashboard
@@ -86,6 +87,22 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
             self.assertEqual(initial["type"], "dag_update")
 
         self.assertNotIn(ticket, dashboard.ws_tickets)
+
+    def test_websocket_ticket_cannot_cross_tenant(self):
+        created = self.client.post(
+            "/api/run",
+            headers={"Authorization": "Bearer tenant-a"},
+            json={"name": "tenant-a-ws", "tasks": []},
+        )
+        run_id = created.json()["run_id"]
+        ticket_response = self.client.post(
+            "/api/auth/ws-ticket",
+            headers={"Authorization": "Bearer tenant-b"},
+        )
+        ticket = ticket_response.json()["ticket"]
+        with self.assertRaises(WebSocketDisconnect):
+            with self.client.websocket_connect(f"/ws/run/{run_id}?ticket={ticket}"):
+                pass
 
 
 if __name__ == "__main__":
