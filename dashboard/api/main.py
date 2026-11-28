@@ -212,8 +212,14 @@ async def websocket_endpoint(websocket: WebSocket, run_id: str, ticket: str = Qu
 @app.post("/api/auth/ws-ticket")
 async def create_ws_ticket(principal: Principal = Depends(require_principal)):
     """Issue a one-use WebSocket ticket, valid for 30 seconds."""
+    now = time.time()
+    for expired_ticket, (_, expires_at) in list(ws_tickets.items()):
+        if expires_at <= now:
+            ws_tickets.pop(expired_ticket, None)
+    if len(ws_tickets) >= 10000:
+        raise HTTPException(status_code=503, detail="WebSocket ticket capacity reached")
     ticket = secrets.token_urlsafe(32)
-    ws_tickets[ticket] = (principal, time.time() + 30)
+    ws_tickets[ticket] = (principal, now + 30)
     return {"ticket": ticket, "expires_in": 30}
 
 
