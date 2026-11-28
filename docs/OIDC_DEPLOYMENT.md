@@ -68,3 +68,12 @@ Configure the Next.js dashboard with these public, non-secret variables:
 The dashboard uses Authorization Code + PKCE (S256). OIDC transaction state is kept in session storage so the full-page provider redirect can be validated; access and user tokens use in-memory storage and are not written to localStorage or sessionStorage. API calls attach the access token as a bearer header. The dashboard requests a one-use WebSocket ticket before opening a socket.
 
 Do not place client secrets, provider API keys, or bearer tokens in `NEXT_PUBLIC_*` variables. The public values above identify the client and endpoints only.
+
+
+## Durable task workers
+
+When `SOLVENS_DATABASE_URL` or `DATABASE_URL` is configured, the API starts one durable worker by default. Set `SOLVENS_DURABLE_WORKERS` per API process to scale workers (set it to `0` to disable them). `SOLVENS_DURABLE_LEASE_SECONDS` defaults to `60`; `SOLVENS_DURABLE_POLL_INTERVAL` defaults to `1.0` seconds.
+
+Durable tasks store a JSON handler name and payload, not Python callbacks or closures. Register each handler in the application before orchestrator initialization. Claims use PostgreSQL `FOR UPDATE SKIP LOCKED`, a bounded lease, owner-bound heartbeats, and retry attempts. Expired leases are reclaimable; exhausted attempts are terminalized. Task reads and cancellation are scoped to both the authenticated tenant and internal user.
+
+Delivery is **at-least-once**, not exactly-once. A process can perform an external side effect and crash before committing its result. Durable handlers must therefore use downstream idempotency keys or otherwise make side effects safe to repeat. SQLite is useful for local tests but does not prove PostgreSQL multi-worker locking semantics.
