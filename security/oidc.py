@@ -42,7 +42,7 @@ def _jwks_client() -> PyJWKClient:
 
 
 def verify_access_token(token: str) -> Principal:
-    issuer = os.getenv("SOLVENS_OIDC_ISSUER", "").rstrip("/")
+    issuer = os.getenv("SOLVENS_OIDC_ISSUER", "")
     audience = os.getenv("SOLVENS_OIDC_AUDIENCE", "").strip()
     if not issuer or not audience or not os.getenv("SOLVENS_OIDC_JWKS_URI"):
         raise OIDCConfigurationError(
