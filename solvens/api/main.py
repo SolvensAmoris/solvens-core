@@ -83,6 +83,7 @@ router: CapabilityRouter | None = None
 start_time: float = 0
 task_tenants: dict[str, str] = {}
 task_users: dict[str, str] = {}
+durable_mode: bool = False
 
 
 async def _durable_echo(payload: dict[str, Any]) -> dict[str, str]:
@@ -115,12 +116,13 @@ def _durable_task_description(record: CoreTaskRecord) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler."""
-    global orchestrator, router, start_time
+    global orchestrator, router, start_time, durable_mode
     import time
     start_time = time.time()
     
     # Initialize services
     database_configured = bool(os.getenv("SOLVENS_DATABASE_URL") or os.getenv("DATABASE_URL"))
+    durable_mode = database_configured
     durable_workers = max(0, int(os.getenv("SOLVENS_DURABLE_WORKERS", "1"))) if database_configured else 0
     durable_lease_seconds = int(os.getenv("SOLVENS_DURABLE_LEASE_SECONDS", "60"))
     durable_poll_interval = float(os.getenv("SOLVENS_DURABLE_POLL_INTERVAL", "1.0"))
@@ -266,7 +268,9 @@ async def create_task(request: TaskRequest, principal: Principal = Depends(requi
         TaskPriority.HIGH: 20,
         TaskPriority.CRITICAL: 30,
     }
-    if orchestrator.durable_enabled:
+    if durable_mode:
+        if not orchestrator.durable_enabled:
+            raise HTTPException(status_code=503, detail="Durable task workers are disabled")
         if not principal.user_id:
             raise HTTPException(status_code=403, detail="Durable user identity required")
         try:
@@ -434,6 +438,8 @@ async def cancel_task(task_id: str, principal: Principal = Depends(require_princ
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
 
     if orchestrator.durable_enabled:
+        if not orchestrator.durable_enabled:
+            raise HTTPException(status_code=503, detail="Durable task workers are disabled")
         if not principal.user_id:
             raise HTTPException(status_code=403, detail="Durable user identity required")
         try:
