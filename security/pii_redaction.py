@@ -304,9 +304,13 @@ class PIIAwareLLMWrapper:
     def _redact_messages(self, messages: list[dict]) -> list[dict]:
         redacted = []
         for message in messages:
-            msg = dict(message)
-            if msg.get("role") in {"user", "tool"} and "content" in msg:
-                msg["content"] = self._redact_value(msg["content"])
+            # Redact every untrusted/provider-bound field regardless of role.
+            # Keep only the role label intact; content, metadata, tool arguments,
+            # names, and multimodal payloads may all carry secrets or PII.
+            msg = {
+                key: (value if key == "role" else self._redact_value(value))
+                for key, value in message.items()
+            }
             redacted.append(msg)
         return redacted
 

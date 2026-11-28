@@ -133,9 +133,9 @@ class AuditLogger:
         """Initialize SQLite database with write-only schema."""
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA locking_mode=EXCLUSIVE")
+        conn.execute("PRAGMA busy_timeout=30000")
         
         conn.execute("""
             CREATE TABLE IF NOT EXISTS audit_events (
@@ -176,7 +176,7 @@ class AuditLogger:
     
     def _get_last_hash(self) -> str:
         """Get the hash of the last event in the chain."""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         cursor = conn.execute(
             "SELECT event_hash FROM audit_events ORDER BY rowid DESC LIMIT 1"
         )
@@ -316,7 +316,7 @@ class AuditLogger:
         Returns:
             Tuple of (is_valid, list of broken chain points)
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         cursor = conn.execute(
             "SELECT * FROM audit_events ORDER BY rowid ASC"
         )
