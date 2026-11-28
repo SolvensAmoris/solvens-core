@@ -24,7 +24,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 from security.oidc import Principal, require_principal, require_role
 from solvens.persistence.database import get_session_factory
-from solvens.persistence.models import DashboardRunRecord, WebSocketTicketRecord
+from solvens.persistence.models import DashboardRunRecord, OutboxEventRecord, WebSocketTicketRecord
 
 
 # ============================================================================
@@ -265,6 +265,16 @@ async def _persist_run(run: RunState, *, create: bool = False) -> None:
             record.status = run.status
             record.snapshot = snapshot
             record.sequence += 1
+        session.add(OutboxEventRecord(
+            tenant_id=run.tenant_id,
+            aggregate_type="dashboard_run",
+            aggregate_id=run.run_id,
+            event_type="dashboard.run.snapshot",
+            payload={
+                "sequence": record.sequence,
+                "snapshot": _run_to_dag(run),
+            },
+        ))
         await session.commit()
 
 
