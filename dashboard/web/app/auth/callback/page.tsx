@@ -11,10 +11,11 @@ export default function OidcCallback() {
   const handled = useRef(false);
 
   useEffect(() => {
-    if (!configured || handled.current) {
+    if (!configured) {
       setError("OIDC is not configured for this dashboard.");
       return;
     }
+    if (handled.current) return;
     handled.current = true;
     let active = true;
     completeSignIn()
