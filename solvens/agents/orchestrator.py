@@ -375,6 +375,16 @@ class AgentOrchestrator(BaseService[None]):
             duration=duration,
         )
 
+    async def cancel_durable_task(
+        self, *, task_id: str, tenant_id: str, user_id: str
+    ) -> bool:
+        """Cancel a persisted task only when tenant and owner match."""
+        if not self._durable_workers:
+            raise OrchestratorError("Durable workers are not configured")
+        return await self._durable_workers[0].cancel_task(
+            task_id=task_id, tenant_id=tenant_id, user_id=user_id
+        )
+
     async def route_message(
         self,
         messages: list[Message],
