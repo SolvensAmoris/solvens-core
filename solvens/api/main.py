@@ -7,7 +7,7 @@ import structlog
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -18,6 +18,7 @@ from solvens.core.config import get_settings
 from solvens.core.exceptions import SolvensError
 from solvens.core.types import Message, MessageRole, TaskPriority, TaskStatus
 from solvens.router import CapabilityRouter
+from security.oidc import Principal, require_principal, require_role
 
 
 # === Request/Response Models ===
@@ -74,6 +75,7 @@ class HealthResponse(BaseModel):
 orchestrator: AgentOrchestrator | None = None
 router: CapabilityRouter | None = None
 start_time: float = 0
+task_tenants: dict[str, str] = {}
 
 
 @asynccontextmanager
@@ -123,10 +125,12 @@ _cors_origins = [
     for origin in os.getenv("SOLVENS_CORS_ORIGINS", "").split(",")
     if origin.strip()
 ]
+if "*" in _cors_origins:
+    raise RuntimeError("Wildcard CORS origins are forbidden")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
@@ -146,7 +150,7 @@ async def health_check() -> HealthResponse:
 
 
 @app.get("/status", tags=["System"])
-async def get_status() -> dict[str, Any]:
+async def get_status(principal: Principal = Depends(require_principal)) -> dict[str, Any]:
     """Get system status including orchestrator and router stats."""
     if not orchestrator or not router:
         raise HTTPException(status_code=503, detail="Services not initialized")
@@ -165,11 +169,12 @@ async def get_status() -> dict[str, Any]:
 # === Chat Routes ===
 
 @app.post("/chat", response_model=ChatResponse, tags=["Chat"])
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(request: ChatRequest, principal: Principal = Depends(require_principal)) -> ChatResponse:
     """Send a chat completion request.
     
     The request will be routed to the optimal provider based on content analysis.
     """
+    require_role(principal, "developer", "editor", "admin", "owner")
     if not router:
         raise HTTPException(status_code=503, detail="Router not initialized")
     
@@ -190,11 +195,12 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
 
 @app.post("/chat/stream", tags=["Chat"])
-async def chat_stream(request: ChatRequest) -> StreamingResponse:
+async def chat_stream(request: ChatRequest, principal: Principal = Depends(require_principal)) -> StreamingResponse:
     """Stream a chat completion response.
     
     Note: Requires a provider that supports streaming.
     """
+    require_role(principal, "developer", "editor", "admin", "owner")
     # TODO: Implement streaming
     raise HTTPException(status_code=501, detail="Streaming not yet implemented")
 
@@ -202,11 +208,12 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
 # === Task Routes ===
 
 @app.post("/tasks", response_model=TaskResponse, tags=["Tasks"])
-async def create_task(request: TaskRequest) -> TaskResponse:
+async def create_task(request: TaskRequest, principal: Principal = Depends(require_principal)) -> TaskResponse:
     """Create a new task.
     
     Tasks are queued and executed by the orchestrator.
     """
+    require_role(principal, "developer", "editor", "admin", "owner")
     if not orchestrator:
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
     
@@ -219,6 +226,7 @@ async def create_task(request: TaskRequest) -> TaskResponse:
         priority=request.priority,
     )
     
+    task_tenants[task_id] = principal.tenant_id
     return TaskResponse(
         id=task_id,
         description=request.description,
@@ -227,11 +235,13 @@ async def create_task(request: TaskRequest) -> TaskResponse:
 
 
 @app.get("/tasks/{task_id}", response_model=TaskResponse, tags=["Tasks"])
-async def get_task(task_id: str) -> TaskResponse:
+async def get_task(task_id: str, principal: Principal = Depends(require_principal)) -> TaskResponse:
     """Get task status and result."""
     if not orchestrator:
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
     
+    if task_tenants.get(task_id) != principal.tenant_id:
+        raise HTTPException(status_code=404, detail="Task not found")
     try:
         task = orchestrator.get_task(task_id)
         return TaskResponse(
@@ -249,12 +259,14 @@ async def get_task(task_id: str) -> TaskResponse:
 async def list_tasks(
     status: TaskStatus | None = None,
     limit: int = 100,
+    principal: Principal = Depends(require_principal),
 ) -> list[TaskResponse]:
     """List tasks with optional status filter."""
     if not orchestrator:
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
     
-    tasks = orchestrator.list_tasks(status=status, limit=limit)
+    tasks = [task for task in orchestrator.list_tasks(status=status, limit=limit)
+             if task_tenants.get(task.id) == principal.tenant_id]
     
     return [
         TaskResponse(
@@ -269,11 +281,14 @@ async def list_tasks(
 
 
 @app.delete("/tasks/{task_id}", tags=["Tasks"])
-async def cancel_task(task_id: str) -> dict[str, str]:
+async def cancel_task(task_id: str, principal: Principal = Depends(require_principal)) -> dict[str, str]:
     """Cancel a running task."""
+    require_role(principal, "developer", "editor", "admin", "owner")
     if not orchestrator:
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
     
+    if task_tenants.get(task_id) != principal.tenant_id:
+        raise HTTPException(status_code=404, detail="Task not found")
     cancelled = await orchestrator.cancel_task(task_id)
     
     if not cancelled:
@@ -285,7 +300,7 @@ async def cancel_task(task_id: str) -> dict[str, str]:
 # === Provider Routes ===
 
 @app.get("/providers", response_model=list[ProviderInfo], tags=["Providers"])
-async def list_providers() -> list[ProviderInfo]:
+async def list_providers(principal: Principal = Depends(require_principal)) -> list[ProviderInfo]:
     """List all available providers."""
     if not router:
         raise HTTPException(status_code=503, detail="Router not initialized")
@@ -304,7 +319,7 @@ async def list_providers() -> list[ProviderInfo]:
 
 
 @app.get("/providers/{provider_type}/health", tags=["Providers"])
-async def check_provider_health(provider_type: str) -> dict[str, Any]:
+async def check_provider_health(provider_type: str, principal: Principal = Depends(require_principal)) -> dict[str, Any]:
     """Check if a specific provider is healthy."""
     if not router:
         raise HTTPException(status_code=503, detail="Router not initialized")
@@ -335,6 +350,7 @@ async def check_provider_health(provider_type: str) -> dict[str, Any]:
 async def list_models(
     provider: str | None = None,
     capability: str | None = None,
+    principal: Principal = Depends(require_principal),
 ) -> dict[str, Any]:
     """List available models."""
     if not router:
@@ -376,7 +392,7 @@ async def list_models(
 # === Utility Routes ===
 
 @app.post("/chat/parse", tags=["Utility"])
-async def parse_messages(messages: list[dict[str, Any]]) -> list[Message]:
+async def parse_messages(messages: list[dict[str, Any]], principal: Principal = Depends(require_principal)) -> list[Message]:
     """Parse raw message dicts into Message objects."""
     result = []
     for msg in messages:

@@ -21,6 +21,8 @@ import secrets
 import json
 import base64
 import logging
+import os
+import jwt
 
 logger = logging.getLogger(__name__)
 
@@ -208,17 +210,9 @@ class RBAC:
     """
     
     def __init__(self, secret_key: Optional[str] = None):
-        env_secret = os.getenv("SOLVENS_SECRET_KEY")
-        if not secret_key and not env_secret:
-            import secrets
-            secret_key = secrets.token_urlsafe(32)
-            import logging
-            logging.warning(
-                "RBAC: No secret key configured. Generated temporary key: %s... "
-                "Set SOLVENS_SECRET_KEY environment variable for production.",
-                secret_key[:8]
-            )
-        self._secret_key = secret_key or env_secret or "dev-secret-insecure"
+        self._secret_key = secret_key or os.getenv("SOLVENS_SECRET_KEY")
+        if self._secret_key is not None and len(self._secret_key.encode("utf-8")) < 32:
+            raise ValueError("SOLVENS_SECRET_KEY must contain at least 32 bytes")
         self._users: dict[str, User] = {}
         self._api_keys: dict[str, APIKey] = {}
         self._teams: dict[str, Team] = {}
@@ -229,8 +223,30 @@ class RBAC:
     # USER MANAGEMENT
     # =========================================================================
     
-    def create_user(self, email: str, team_id: str, role: Role = Role.DEVELOPER) -> User:
-        """Create a new user."""
+    def _bootstrap(self, token: Optional[str]) -> None:
+        expected = os.getenv("SOLVENS_RBAC_BOOTSTRAP_TOKEN", "")
+        if not expected or not token or not secrets.compare_digest(token, expected):
+            raise PermissionDenied("Valid SOLVENS_RBAC_BOOTSTRAP_TOKEN required")
+
+    def _actor(self, actor_id: Optional[str], team_id: Optional[str] = None, owner_only: bool = False) -> User:
+        actor = self._users.get(actor_id or "")
+        allowed = (Role.OWNER,) if owner_only else (Role.OWNER, Role.ADMIN)
+        if actor is None or not actor.is_active or actor.role not in allowed:
+            raise PermissionDenied("Authenticated administrative actor required")
+        if team_id is not None and actor.team_id != team_id:
+            raise PermissionDenied("Actor cannot administer another tenant")
+        return actor
+
+    def create_user(self, email: str, team_id: str, role: Role = Role.DEVELOPER, *, actor_id: Optional[str] = None, bootstrap_token: Optional[str] = None) -> User:
+        """Create a user with explicit bootstrap or tenant-admin authorization."""
+        if not self._users:
+            self._bootstrap(bootstrap_token)
+            if role != Role.OWNER:
+                raise PermissionDenied("First provisioned user must be OWNER")
+        else:
+            actor = self._actor(actor_id, team_id)
+            if actor.role == Role.ADMIN and role in (Role.ADMIN, Role.OWNER):
+                raise PermissionDenied("ADMIN cannot assign ADMIN or OWNER")
         user = User(
             id=self._generate_id(),
             email=email,
@@ -240,8 +256,8 @@ class RBAC:
         self._users[user.id] = user
         self._audit(
             "user.create",
-            actor_id=user.id,
-            actor_type="user",
+            actor_id=actor_id or "bootstrap",
+            actor_type="user" if actor_id else "bootstrap",
             team_id=team_id,
             resource_type="user",
             resource_id=user.id,
@@ -262,11 +278,19 @@ class RBAC:
     
     def update_user_role(self, user_id: str, new_role: Role, actor_id: str) -> bool:
         """Update user role (admin only)."""
-        if user_id not in self._users:
+        target = self._users.get(user_id)
+        if target is None:
             return False
-        
-        old_role = self._users[user_id].role
-        self._users[user_id].role = new_role
+        actor = self._actor(actor_id, target.team_id)
+        if actor.id == target.id:
+            raise PermissionDenied("Actors cannot change their own role")
+        if target.role == Role.OWNER and actor.role != Role.OWNER:
+            raise PermissionDenied("Only OWNER can change an OWNER role")
+        if actor.role == Role.ADMIN and new_role in (Role.ADMIN, Role.OWNER):
+            raise PermissionDenied("ADMIN cannot assign ADMIN or OWNER")
+
+        old_role = target.role
+        target.role = new_role
         
         self._audit(
             "user.role_change",
@@ -291,11 +315,37 @@ class RBAC:
         scopes: list[str],
         team_id: Optional[str] = None,
         expires_days: Optional[int] = None,
+        *,
+        actor_id: Optional[str] = None,
     ) -> tuple[APIKey, str]:
         """
         Create API key. Returns (APIKey, raw_key).
         RAW KEY MUST BE STORED SECURELY BY CALLER.
         """
+        owner = self._users.get(user_id)
+        if owner is None:
+            raise ValueError("API key owner does not exist")
+        actor = self._users.get(actor_id or "")
+        if actor is None or not actor.is_active:
+            raise PermissionDenied("Authenticated actor required")
+        if actor.id != owner.id and (actor.role not in (Role.ADMIN, Role.OWNER) or actor.team_id != owner.team_id):
+            raise PermissionDenied("Actor cannot create API keys for this user")
+        for scope in scopes:
+            if scope in ("admin:*", "*:*"):
+                if actor.role not in (Role.ADMIN, Role.OWNER):
+                    raise PermissionDenied("Only tenant administrators may issue administrative API keys")
+            elif scope.endswith(":*"):
+                resource = scope.split(":", 1)[0]
+                resource_permissions = {p for p in Permission if p.value.startswith(resource + ":")}
+                if not resource_permissions or not resource_permissions.issubset(ROLE_PERMISSIONS.get(actor.role, set())):
+                    raise PermissionDenied("API key wildcard exceeds actor permissions")
+            else:
+                try:
+                    permission = Permission(scope)
+                except ValueError as exc:
+                    raise ValueError(f"Unsupported API key scope: {scope}") from exc
+                if permission not in ROLE_PERMISSIONS.get(actor.role, set()):
+                    raise PermissionDenied(f"Actor cannot grant scope: {scope}")
         raw_key = f"sk_solvens_{secrets.token_urlsafe(32)}"
         key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
         key_prefix = raw_key[:16]
@@ -304,6 +354,9 @@ class RBAC:
         if expires_days:
             expires_at = datetime.now(timezone.utc) + timedelta(days=expires_days)
         
+        effective_team = team_id or owner.team_id
+        if effective_team != owner.team_id:
+            raise PermissionDenied("API keys cannot be bound outside the owner tenant")
         api_key = APIKey(
             id=self._generate_id(),
             user_id=user_id,
@@ -311,7 +364,7 @@ class RBAC:
             key_hash=key_hash,
             key_prefix=key_prefix,
             scopes=set(scopes),
-            team_id=team_id,
+            team_id=effective_team,
             expires_at=expires_at,
         )
         
@@ -319,9 +372,9 @@ class RBAC:
         
         self._audit(
             "api_key.create",
-            actor_id=user_id,
+            actor_id=actor.id,
             actor_type="user",
-            team_id=team_id or "",
+            team_id=effective_team,
             resource_type="api_key",
             resource_id=api_key.id,
             success=True,
@@ -346,10 +399,16 @@ class RBAC:
     
     def revoke_api_key(self, key_id: str, actor_id: str) -> bool:
         """Revoke an API key."""
-        if key_id not in self._api_keys:
+        key = self._api_keys.get(key_id)
+        if key is None:
             return False
-        
-        self._api_keys[key_id].is_active = False
+        actor = self._users.get(actor_id)
+        owner = self._users.get(key.user_id)
+        if actor is None or not actor.is_active or owner is None:
+            raise PermissionDenied("Authenticated actor required")
+        if actor.id != owner.id and (actor.role not in (Role.ADMIN, Role.OWNER) or actor.team_id != owner.team_id):
+            raise PermissionDenied("Actor cannot revoke this API key")
+        key.is_active = False
         
         self._audit(
             "api_key.revoke",
@@ -368,9 +427,10 @@ class RBAC:
     
     def check_permission(self, user: User, permission: Permission) -> bool:
         """Check if user has a specific permission."""
-        if not user.is_active:
+        stored = self._users.get(user.id)
+        if stored is None or not stored.is_active or (stored.email, stored.team_id, stored.role) != (user.email, user.team_id, user.role):
             return False
-        return permission in ROLE_PERMISSIONS.get(user.role, set())
+        return permission in ROLE_PERMISSIONS.get(stored.role, set())
     
     def require_permission(self, user: User, permission: Permission) -> None:
         """Require user has permission, raise if not."""
@@ -388,20 +448,24 @@ class RBAC:
     
     def can_run_workflow(self, user: User, workflow_id: str) -> bool:
         """Check if user can execute a workflow."""
-        # Owner/Admin can do anything
-        if user.role in (Role.OWNER, Role.ADMIN):
+        stored = self._users.get(user.id)
+        if stored is None or not stored.is_active or (stored.email, stored.team_id, stored.role) != (user.email, user.team_id, user.role):
+            return False
+        acl = self._workflow_acls.get(workflow_id)
+        if acl is None or acl.team_id != stored.team_id:
+            return False
+        if stored.id in acl.denied_users:
+            return False
+        # Tenant boundary is checked before privileged-role bypass.
+        if stored.role in (Role.OWNER, Role.ADMIN):
             return True
-        
+
         # Must have WORKFLOW_RUN permission
         if Permission.WORKFLOW_RUN not in ROLE_PERMISSIONS.get(user.role, set()):
             return False
         
         # Check workflow ACL
-        acl = self._workflow_acls.get(workflow_id)
         if acl:
-            # Check deny list
-            if user.id in acl.denied_users:
-                return False
             
             # Check allow list
             if not acl.is_public:
@@ -425,29 +489,36 @@ class RBAC:
             raise PermissionDenied(f"Cannot run workflow {workflow_id}")
     
     def api_key_can_access(self, api_key: APIKey, resource: str, action: str) -> bool:
-        """Check if API key scope allows access."""
-        # Admin scope
-        if "admin:*" in api_key.scopes or "*:*" in api_key.scopes:
-            return True
-        
-        # Check exact match
+        """Check scopes against the authoritative key and the owner's current role."""
+        stored = self._api_keys.get(api_key.id)
+        if stored is None or stored.key_hash != api_key.key_hash or not stored.is_active:
+            return False
+        if stored.expires_at and stored.expires_at <= datetime.now(timezone.utc):
+            return False
+        owner = self._users.get(stored.user_id)
+        if owner is None or not owner.is_active or stored.team_id != owner.team_id:
+            return False
+        try:
+            required = Permission(f"{resource}:{action}")
+        except ValueError:
+            return False
+        if required not in ROLE_PERMISSIONS.get(owner.role, set()):
+            return False
+        if "admin:*" in stored.scopes or "*:*" in stored.scopes:
+            return owner.role in (Role.ADMIN, Role.OWNER)
         exact_scope = f"{resource}:{action}"
-        if exact_scope in api_key.scopes:
-            return True
-        
-        # Check wildcard match
         wildcard_scope = f"{resource}:*"
-        if wildcard_scope in api_key.scopes:
-            return True
-        
-        return False
+        return exact_scope in stored.scopes or wildcard_scope in stored.scopes
     
     # =========================================================================
     # TEAM MANAGEMENT
     # =========================================================================
     
-    def create_team(self, name: str, monthly_budget: float = 500.00) -> Team:
-        """Create a new team."""
+    def create_team(self, name: str, monthly_budget: float = 500.00, *, bootstrap_token: Optional[str] = None) -> Team:
+        """Create the initial tenant during explicit platform bootstrap."""
+        if self._teams or self._users:
+            raise PermissionDenied("Tenant creation is restricted to platform bootstrap")
+        self._bootstrap(bootstrap_token)
         team = Team(
             id=self._generate_id(),
             name=name,
@@ -471,8 +542,11 @@ class RBAC:
         is_public: bool = False,
         allowed_users: list[str] = None,
         allowed_teams: list[str] = None,
+        *,
+        actor_id: Optional[str] = None,
     ) -> WorkflowACL:
         """Set access control for a workflow."""
+        self._actor(actor_id, team_id)
         acl = WorkflowACL(
             workflow_id=workflow_id,
             team_id=team_id,
@@ -488,35 +562,45 @@ class RBAC:
     # =========================================================================
     
     def generate_token(self, user: User, expires_hours: int = 24) -> str:
-        """Generate simple token for user."""
-        exp = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+        """Generate a signed JWT only for the current authoritative user."""
+        if not self._secret_key:
+            raise RuntimeError("SOLVENS_SECRET_KEY must be configured for JWT issuance")
+        stored = self._users.get(user.id)
+        if stored is None or not stored.is_active or (stored.email, stored.team_id, stored.role) != (user.email, user.team_id, user.role):
+            raise PermissionDenied("Cannot mint token for an unverified user")
+        now = datetime.now(timezone.utc)
         payload = {
-            "user_id": user.id,
-            "email": user.email,
-            "team_id": user.team_id,
-            "role": user.role.value,
-            "exp": exp.isoformat(),
+            "sub": stored.id,
+            "user_id": stored.id,
+            "email": stored.email,
+            "team_id": stored.team_id,
+            "role": stored.role.value,
+            "iss": "solvens-core",
+            "aud": "solvens-core",
+            "iat": now,
+            "exp": now + timedelta(hours=min(max(expires_hours, 1), 1)),
         }
-        data = base64.b64encode(json.dumps(payload).encode()).decode()
-        sig = hashlib.sha256(f"{data}{self._secret_key}".encode()).hexdigest()[:16]
-        return f"{data}.{sig}"
+        return jwt.encode(payload, self._secret_key, algorithm="HS256")
     
     def validate_token(self, token: str) -> Optional[dict]:
-        """Validate token and return payload."""
+        """Validate JWT signature and current server-side identity state."""
+        if not self._secret_key:
+            return None
         try:
-            parts = token.split(".")
-            if len(parts) != 2:
+            payload = jwt.decode(
+                token, self._secret_key, algorithms=["HS256"],
+                issuer="solvens-core", audience="solvens-core",
+                options={"require": ["exp", "iat", "sub", "iss", "aud"]},
+            )
+            stored = self._users.get(payload.get("sub"))
+            if stored is None or not stored.is_active:
                 return None
-            data, sig = parts
-            expected_sig = hashlib.sha256(f"{data}{self._secret_key}".encode()).hexdigest()[:16]
-            if sig != expected_sig:
-                return None
-            payload = json.loads(base64.b64decode(data))
-            exp = datetime.fromisoformat(payload["exp"])
-            if exp < datetime.now(timezone.utc):
+            if (payload.get("email"), payload.get("team_id"), payload.get("role")) != (
+                stored.email, stored.team_id, stored.role.value
+            ):
                 return None
             return payload
-        except Exception:
+        except jwt.PyJWTError:
             return None
     
     # =========================================================================
@@ -579,7 +663,6 @@ class RBAC:
 
 
 # Singleton instance
-import os
 rbac = RBAC()
 
 

@@ -8,14 +8,17 @@ import asyncio
 import json
 import time
 import uuid
+import secrets
+import os
 from datetime import datetime
 from typing import Optional
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from security.oidc import Principal, require_principal, require_role
 
 
 # ============================================================================
@@ -71,6 +74,7 @@ class RunMetrics:
 class RunState:
     run_id: str
     workflow_name: str
+    tenant_id: str
     status: str = "pending"
     tasks: dict[str, TaskNode] = field(default_factory=dict)
     metrics: RunMetrics = field(default_factory=RunMetrics)
@@ -134,6 +138,7 @@ manager = ConnectionManager()
 # ============================================================================
 
 runs: dict[str, RunState] = {}
+ws_tickets: dict[str, tuple[Principal, float]] = {}
 
 
 # ============================================================================
@@ -143,15 +148,21 @@ runs: dict[str, RunState] = {}
 app = FastAPI(
     title="SOLVENS CORE Dashboard API",
     description="Real-time DAG execution dashboard",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
+_cors_origins = [origin.strip() for origin in os.getenv("SOLVENS_CORS_ORIGINS", "").split(",") if origin.strip()]
+if "*" in _cors_origins:
+    raise RuntimeError("Wildcard CORS origins are forbidden")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -160,7 +171,16 @@ app.add_middleware(
 # ============================================================================
 
 @app.websocket("/ws/run/{run_id}")
-async def websocket_endpoint(websocket: WebSocket, run_id: str):
+async def websocket_endpoint(websocket: WebSocket, run_id: str, ticket: str = Query(...)):
+    issued = ws_tickets.pop(ticket, None)
+    if issued is None or issued[1] < time.time():
+        await websocket.close(code=4401)
+        return
+    principal = issued[0]
+    run = runs.get(run_id)
+    if run is None or run.tenant_id != principal.tenant_id:
+        await websocket.close(code=4404)
+        return
     await manager.connect(websocket, run_id)
     try:
         # Send initial state if run exists
@@ -189,44 +209,59 @@ async def websocket_endpoint(websocket: WebSocket, run_id: str):
 # REST Endpoints
 # ============================================================================
 
+@app.post("/api/auth/ws-ticket")
+async def create_ws_ticket(principal: Principal = Depends(require_principal)):
+    """Issue a one-use WebSocket ticket, valid for 30 seconds."""
+    now = time.time()
+    for expired_ticket, (_, expires_at) in list(ws_tickets.items()):
+        if expires_at <= now:
+            ws_tickets.pop(expired_ticket, None)
+    if len(ws_tickets) >= 10000:
+        raise HTTPException(status_code=503, detail="WebSocket ticket capacity reached")
+    ticket = secrets.token_urlsafe(32)
+    ws_tickets[ticket] = (principal, now + 30)
+    return {"ticket": ticket, "expires_in": 30}
+
+
 @app.get("/api/runs")
-async def list_runs():
+async def list_runs(principal: Principal = Depends(require_principal)):
     """List all runs."""
     return [
         {
             "run_id": run_id,
-            "workflow_name": run.state.workflow_name,
-            "status": run.state.status,
-            "tasks_completed": run.state.metrics.tasks_completed,
-            "tasks_total": run.state.metrics.tasks_total,
-            "created_at": run.state.created_at
+            "workflow_name": run.workflow_name,
+            "status": run.status,
+            "tasks_completed": run.metrics.tasks_completed,
+            "tasks_total": run.metrics.tasks_total,
+            "created_at": run.created_at
         }
-        for run_id, run in runs.items()
+        for run_id, run in runs.items() if run.tenant_id == principal.tenant_id
     ]
 
 
 @app.get("/api/run/{run_id}")
-async def get_run(run_id: str):
+async def get_run(run_id: str, principal: Principal = Depends(require_principal)):
     """Get run details."""
-    if run_id not in runs:
+    if run_id not in runs or runs[run_id].tenant_id != principal.tenant_id:
         raise HTTPException(status_code=404, detail="Run not found")
     return get_run_dag(run_id)
 
 
 @app.get("/api/run/{run_id}/metrics")
-async def get_run_metrics(run_id: str):
+async def get_run_metrics(run_id: str, principal: Principal = Depends(require_principal)):
     """Get run metrics."""
-    if run_id not in runs:
+    if run_id not in runs or runs[run_id].tenant_id != principal.tenant_id:
         raise HTTPException(status_code=404, detail="Run not found")
     run = runs[run_id]
     return asdict(run.metrics)
 
 
 @app.post("/api/simulate")
-async def simulate_workflow(workflow: dict):
+async def simulate_workflow(workflow: dict, principal: Principal = Depends(require_principal)):
     """
     Simulate a workflow and return estimated metrics.
     """
+    require_role(principal, "developer", "editor", "admin", "owner")
     workflow_name = workflow.get("name", "unnamed")
     tasks = workflow.get("tasks", [])
 
@@ -307,10 +342,11 @@ async def simulate_workflow(workflow: dict):
 
 
 @app.post("/api/run")
-async def start_run(workflow: dict):
+async def start_run(workflow: dict, principal: Principal = Depends(require_principal)):
     """
     Start a new run and return run_id.
     """
+    require_role(principal, "developer", "editor", "admin", "owner")
     run_id = str(uuid.uuid4())[:8]
     workflow_name = workflow.get("name", "unnamed")
     tasks = workflow.get("tasks", [])
@@ -346,6 +382,7 @@ async def start_run(workflow: dict):
     runs[run_id] = RunState(
         run_id=run_id,
         workflow_name=workflow_name,
+        tenant_id=principal.tenant_id,
         tasks=dag_nodes,
         estimated_time_ms=estimated_time_ms,
         estimated_cost_usd=estimated_cost_usd
