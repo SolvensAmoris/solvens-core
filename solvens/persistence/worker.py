@@ -75,7 +75,7 @@ class DurableTaskWorker:
             raise ValueError("max_attempts must be between 1 and 20")
         if idempotency_key is not None and not 1 <= len(idempotency_key) <= 256:
             raise ValueError("idempotency_key must contain 1..256 characters")
-        json.dumps(payload)
+        json.dumps(payload, allow_nan=False)
 
         factory = self._factory()
         async with factory() as session:
@@ -172,7 +172,7 @@ class DurableTaskWorker:
         )
         try:
             result = await execution
-            json.dumps(result)
+            json.dumps(result, allow_nan=False)
         except asyncio.CancelledError:
             if lease_lost.is_set():
                 await self._finish_cancelled(claim["id"])
