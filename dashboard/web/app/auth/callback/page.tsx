@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { completeSignIn, useAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 
 export default function OidcCallback() {
   const router = useRouter();
-  const { configured } = useAuth();
+  const { configured, completeSignIn } = useAuth();
   const [error, setError] = useState("");
 
   useEffect(() => {
