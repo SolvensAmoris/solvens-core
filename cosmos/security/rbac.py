@@ -489,7 +489,7 @@ class RBAC:
             raise PermissionDenied(f"Cannot run workflow {workflow_id}")
     
     def api_key_can_access(self, api_key: APIKey, resource: str, action: str) -> bool:
-        """Check scopes against the authoritative, current API key and owner."""
+        """Check scopes against the authoritative key and the owner's current role."""
         stored = self._api_keys.get(api_key.id)
         if stored is None or stored.key_hash != api_key.key_hash or not stored.is_active:
             return False
@@ -498,21 +498,17 @@ class RBAC:
         owner = self._users.get(stored.user_id)
         if owner is None or not owner.is_active or stored.team_id != owner.team_id:
             return False
-        api_key = stored
-        if "admin:*" in api_key.scopes or "*:*" in api_key.scopes:
-            return True
-        
-        # Check exact match
+        try:
+            required = Permission(f"{resource}:{action}")
+        except ValueError:
+            return False
+        if required not in ROLE_PERMISSIONS.get(owner.role, set()):
+            return False
+        if "admin:*" in stored.scopes or "*:*" in stored.scopes:
+            return owner.role in (Role.ADMIN, Role.OWNER)
         exact_scope = f"{resource}:{action}"
-        if exact_scope in api_key.scopes:
-            return True
-        
-        # Check wildcard match
         wildcard_scope = f"{resource}:*"
-        if wildcard_scope in api_key.scopes:
-            return True
-        
-        return False
+        return exact_scope in stored.scopes or wildcard_scope in stored.scopes
     
     # =========================================================================
     # TEAM MANAGEMENT
