@@ -30,7 +30,7 @@ class OIDCConfigurationError(RuntimeError):
 
 @lru_cache(maxsize=1)
 def _jwks_client() -> PyJWKClient:
-    issuer = os.getenv("SOLVENS_OIDC_ISSUER", "").rstrip("/")
+    issuer = os.getenv("SOLVENS_OIDC_ISSUER", "")
     if not issuer:
         raise OIDCConfigurationError("SOLVENS_OIDC_ISSUER is required")
     jwks_uri = os.getenv("SOLVENS_OIDC_JWKS_URI", "").strip()
