@@ -8,17 +8,16 @@ export default function OidcCallback() {
   const router = useRouter();
   const { configured, completeSignIn } = useAuth();
   const [error, setError] = useState("");
-  const handled = useRef(false);
+  const completion = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     if (!configured) {
       setError("OIDC is not configured for this dashboard.");
       return;
     }
-    if (handled.current) return;
-    handled.current = true;
+    if (!completion.current) completion.current = completeSignIn();
     let active = true;
-    completeSignIn()
+    completion.current
       .then(() => {
         if (active) router.replace("/");
       })
