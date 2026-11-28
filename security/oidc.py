@@ -87,7 +87,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 async def require_principal(
     request: Request,
-    credentials: HTTPAuthorizationCredentials | None = None,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> Principal:
     # FastAPI injects HTTPBearer only when declared as a dependency.
     if credentials is None:
