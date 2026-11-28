@@ -122,7 +122,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Initialize services
     database_configured = bool(os.getenv("SOLVENS_DATABASE_URL") or os.getenv("DATABASE_URL"))
     durable_workers = max(0, int(os.getenv("SOLVENS_DURABLE_WORKERS", "1"))) if database_configured else 0
-    orchestrator = AgentOrchestrator(OrchestratorConfig(durable_workers=durable_workers))
+    durable_lease_seconds = int(os.getenv("SOLVENS_DURABLE_LEASE_SECONDS", "60"))
+    durable_poll_interval = float(os.getenv("SOLVENS_DURABLE_POLL_INTERVAL", "1.0"))
+    orchestrator = AgentOrchestrator(
+        OrchestratorConfig(
+            durable_workers=durable_workers,
+            durable_lease_seconds=durable_lease_seconds,
+            durable_poll_interval=durable_poll_interval,
+        )
+    )
     if durable_workers:
         orchestrator.register_durable_handler("api.echo", _durable_echo)
     router = CapabilityRouter()
