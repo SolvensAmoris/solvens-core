@@ -52,6 +52,10 @@ class RBACAdversarialTests(unittest.TestCase):
                 self.user.id, "cross-tenant", ["admin:*"], team_id="tenant-b"
             )
 
+    def test_workflow_without_tenant_acl_is_denied(self):
+        owner = self.manager.create_user("owner@example.test", "tenant-a", Role.OWNER)
+        self.assertFalse(self.manager.can_run_workflow(owner, "unregistered-workflow"))
+
     def test_token_validation_rejects_deleted_or_changed_identity(self):
         import os
         old = os.environ.get("SOLVENS_SECRET_KEY")
