@@ -64,6 +64,17 @@ class CosmosRBACSecurityTests(unittest.TestCase):
         self.assertTrue(self.rbac.api_key_can_access(key, "workflow", "run"))
         self.assertFalse(self.rbac.api_key_can_access(key, "workflow", "delete"))
 
+    def test_api_key_loses_privilege_after_owner_role_downgrade(self):
+        key, _ = self.rbac.create_api_key(
+            user_id=self.developer.id,
+            name="ci",
+            scopes=["workflow:run"],
+            actor_id=self.developer.id,
+        )
+        self.assertTrue(self.rbac.api_key_can_access(key, "workflow", "run"))
+        self.rbac._users[self.developer.id].role = Role.VIEWER
+        self.assertFalse(self.rbac.api_key_can_access(key, "workflow", "run"))
+
     def test_jwt_requires_configured_secret_and_current_identity(self):
         token = self.rbac.generate_token(self.developer)
         self.assertIsNotNone(self.rbac.validate_token(token))
