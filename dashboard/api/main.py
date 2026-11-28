@@ -147,7 +147,6 @@ logger = logging.getLogger(__name__)
 
 runs: dict[str, RunState] = {}
 run_tasks: dict[str, asyncio.Task] = {}
-ws_tickets: dict[str, tuple[Principal, float]] = {}  # legacy test hook; never stores live tickets
 
 
 class WsTicketRequest(BaseModel):
