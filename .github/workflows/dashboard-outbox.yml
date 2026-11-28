@@ -1,0 +1,66 @@
+name: Dashboard outbox and Redis replay
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "solvens/persistence/outbox.py"
+      - "dashboard/api/**"
+      - "tests/test_outbox.py"
+      - "tests/test_dashboard_event_manager.py"
+      - ".github/workflows/dashboard-outbox.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "solvens/persistence/outbox.py"
+      - "dashboard/api/**"
+      - "tests/test_outbox.py"
+      - "tests/test_dashboard_event_manager.py"
+      - ".github/workflows/dashboard-outbox.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  outbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: solvens_outbox_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d solvens_outbox_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/solvens_outbox_test
+      SOLVENS_REDIS_URL: redis://127.0.0.1:6379/0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install project and test dependencies
+        run: pip install -e ".[dev,api,storage]"
+      - name: Apply migrations
+        run: alembic upgrade head
+      - name: Test transactional outbox and replay
+        run: pytest -q tests/test_outbox.py tests/test_dashboard_event_manager.py
