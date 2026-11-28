@@ -260,7 +260,11 @@ async def get_run(run_id: str, principal: Principal = Depends(require_principal)
 @app.get("/api/run/{run_id}/metrics")
 async def get_run_metrics(run_id: str, principal: Principal = Depends(require_principal)):
     """Get run metrics."""
-    if run_id not in runs or runs[run_id].tenant_id != principal.tenant_id:
+    if (
+        run_id not in runs
+        or runs[run_id].tenant_id != principal.tenant_id
+        or (runs[run_id].user_id is not None and runs[run_id].user_id != principal.user_id)
+    ):
         raise HTTPException(status_code=404, detail="Run not found")
     run = runs[run_id]
     return asdict(run.metrics)
