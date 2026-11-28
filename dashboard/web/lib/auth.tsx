@@ -63,7 +63,7 @@ function getManager(): UserManager {
     scope: `openid profile email ${apiScope}`,
     loadUserInfo: false,
     automaticSilentRenew: false,
-    // Interaction state and tokens stay in memory, not localStorage/sessionStorage.
+    // Tokens stay in memory. OIDC state uses sessionStorage across the redirect.
     stateStore: new WebStorageStateStore({ store: window.sessionStorage }),
     userStore: new WebStorageStateStore({ store: new InMemoryWebStorage() }),
   });
@@ -116,7 +116,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let current = await oidc.getUser();
     if (!current) return null;
     if (current.expired) {
-      current = await oidc.signinSilent();
+      try {
+        current = await oidc.signinSilent();
+      } catch {
+        await oidc.signinRedirect();
+        return null;
+      }
     }
     return current?.access_token || null;
   }, []);
@@ -160,7 +165,7 @@ export function useAuth() {
   return context;
 }
 
-export async function completeSignIn() {\n  await getManager().signinRedirectCallback();\n}\n\nexport function AuthControls() {
+export function AuthControls() {
   const { user, loading, configured, signIn, signOut } = useAuth();
   if (!configured) {
     return <span className="text-xs text-amber-300">OIDC not configured</span>;
