@@ -268,15 +268,16 @@ class RBACManager:
     # Authorization
     def has_permission(self, user: User, permission: Permission) -> bool:
         """Check if user has a specific permission."""
-        if user.id not in self._users:
+        stored_user = self._users.get(user.id)
+        if stored_user is None or stored_user.team_id != user.team_id or stored_user.role != user.role:
             return False
-        return permission in ROLE_PERMISSIONS.get(user.role, set())
+        return permission in ROLE_PERMISSIONS.get(stored_user.role, set())
     
     def can_run_workflow(self, user: User, workflow_id: str) -> bool:
         """Check if user can run a specific workflow."""
         # Reject stale/foreign user objects before evaluating privileges.
         stored_user = self._users.get(user.id)
-        if stored_user is None or stored_user.team_id != user.team_id:
+        if stored_user is None or stored_user.team_id != user.team_id or stored_user.role != user.role:
             return False
 
         # Tenant boundary applies to every role, including OWNER and ADMIN.
@@ -284,21 +285,17 @@ class RBACManager:
         if acl and acl.team_id != user.team_id:
             return False
 
-        # Privileged roles bypass workflow allow-lists only inside their tenant.
+        if acl and (user.id in acl.deny_users or user.team_id in acl.deny_users):
+            return False
+
+        # Privileged roles bypass allow-lists only inside their own tenant.
         if user.role in (Role.OWNER, Role.ADMIN):
             return True
-        if acl:
-            # Check deny list
-            if user.id in acl.deny_users or user.team_id in acl.deny_users:
+        if acl and not acl.public:
+            if user.id not in acl.allowed_users and user.team_id not in acl.allowed_teams:
                 return False
-            
-            # Check allow list
-            if not acl.public:
-                if user.id not in acl.allowed_users and user.team_id not in acl.allowed_teams:
-                    return False
-        
-        # Check user role
-        return Permission.WORKFLOW_RUN in ROLE_PERMISSIONS.get(user.role, set())
+
+        return Permission.WORKFLOW_RUN in ROLE_PERMISSIONS.get(stored_user.role, set())
     
     def scope_matches(self, scope_pattern: str, target: str) -> bool:
         """
