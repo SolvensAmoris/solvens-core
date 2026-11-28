@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import timezone, datetime
-from typing import Any, Callable, TypeVar
+from typing import Any, Awaitable, Callable, TypeVar, TYPE_CHECKING
 import socket
 
 import structlog
@@ -28,7 +28,10 @@ from solvens.core.types import (
     TaskStatus,
 )
 from solvens.router.router import CapabilityRouter
-from solvens.persistence.worker import DurableHandler, DurableTaskWorker
+if TYPE_CHECKING:
+    from solvens.persistence.worker import DurableTaskWorker
+
+DurableHandler = Callable[[dict[str, Any]], Awaitable[Any]]
 
 logger = structlog.get_logger(__name__)
 
@@ -171,6 +174,10 @@ class AgentOrchestrator(BaseService[None]):
         for i in range(self.config.max_concurrent_tasks):
             worker = asyncio.create_task(self._worker(i))
             self._workers.append(worker)
+
+        # Import storage dependencies only when durable workers are enabled.
+        if self.config.durable_workers > 0:
+            from solvens.persistence.worker import DurableTaskWorker
 
         # Durable workers claim database records with SKIP LOCKED and leases.
         for i in range(max(0, self.config.durable_workers)):
