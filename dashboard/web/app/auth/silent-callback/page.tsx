@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth";
 
 export default function OidcSilentCallback() {
   const { configured, completeSilentSignIn } = useAuth();
-  const handled = useRef(false);
+  const completion = useRef<Promise<void> | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -13,10 +13,9 @@ export default function OidcSilentCallback() {
       setError("OIDC is not configured for this dashboard.");
       return;
     }
-    if (handled.current) return;
-    handled.current = true;
+    if (!completion.current) completion.current = completeSilentSignIn();
     let active = true;
-    completeSilentSignIn().catch((reason: unknown) => {
+    completion.current.catch((reason: unknown) => {
       if (active) {
         setError(reason instanceof Error ? reason.message : "Silent OIDC callback failed");
       }
