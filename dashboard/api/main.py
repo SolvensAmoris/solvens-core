@@ -606,7 +606,7 @@ async def get_run_metrics(run_id: str, principal: Principal = Depends(require_pr
         raise HTTPException(status_code=503, detail="Run database unavailable") from exc
     if record is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    run = runs.get(run_id)
+    run = runs.get(run_id) if run_id in run_tasks else None
     if run is None or run.tenant_id != principal.tenant_id or run.user_id != principal.user_id:
         run = _deserialize_run(record)
         runs[run_id] = run
