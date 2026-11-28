@@ -15,9 +15,10 @@ export default function OidcCallback() {
       setError("OIDC is not configured for this dashboard.");
       return;
     }
-    if (!completion.current) completion.current = completeSignIn();
+    const completionPromise =
+      completion.current ?? (completion.current = completeSignIn());
     let active = true;
-    completion.current
+    completionPromise
       .then(() => {
         if (active) router.replace("/");
       })
