@@ -21,6 +21,8 @@ import secrets
 import json
 import base64
 import logging
+import os
+import jwt
 
 logger = logging.getLogger(__name__)
 
@@ -662,7 +664,6 @@ class RBAC:
 
 
 # Singleton instance
-import os
 rbac = RBAC()
 
 
