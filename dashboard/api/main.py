@@ -420,6 +420,9 @@ async def _redis_stream_listener(redis_url: str) -> None:
                 raise
             except Exception as exc:
                 logger.error("Dashboard Redis stream read failed", error=str(exc))
+                # Replay retained stream entries after reconnect; sequence guards
+                # discard stale snapshots and preserve the latest full state.
+                last_id = "0-0"
                 await asyncio.sleep(1.0)
                 continue
 
