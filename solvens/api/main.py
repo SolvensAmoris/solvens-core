@@ -46,7 +46,7 @@ class ChatResponse(BaseModel):
 
 class TaskRequest(BaseModel):
     """Task creation request."""
-    description: str
+    description: str = Field(min_length=1, max_length=10000)
     priority: TaskPriority = TaskPriority.NORMAL
     callback: str | None = None  # Arbitrary callbacks are not executed.
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=256)
@@ -263,6 +263,11 @@ async def chat_stream(request: ChatRequest, principal: Principal = Depends(requi
 async def create_task(request: TaskRequest, principal: Principal = Depends(require_principal)) -> TaskResponse:
     """Persist a serializable task and return its durable task ID."""
     require_role(principal, "developer", "editor", "admin", "owner")
+    if request.callback is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Callback names are not accepted; use a server-registered durable handler",
+        )
     if not orchestrator:
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
 
