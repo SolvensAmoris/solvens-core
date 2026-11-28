@@ -374,40 +374,55 @@ app.add_middleware(
 
 @app.websocket("/ws/run/{run_id}")
 async def websocket_endpoint(websocket: WebSocket, run_id: str, ticket: str = Query(...)):
-    issued = ws_tickets.pop(ticket, None)
-    if issued is None or issued[1] < time.time():
+    """Consume a hashed, run-bound ticket once and load the durable run snapshot."""
+    try:
+        owner = await _consume_ws_ticket(ticket, run_id)
+    except (SQLAlchemyError, RuntimeError):
+        await websocket.close(code=1011)
+        return
+    if owner is None:
         await websocket.close(code=4401)
         return
-    principal = issued[0]
-    run = runs.get(run_id)
-    if (
-        run is None
-        or run.tenant_id != principal.tenant_id
-        or run.user_id != principal.user_id
-    ):
+
+    tenant_id, user_id = owner
+    try:
+        record = await _load_run_record(
+            run_id, tenant_id=tenant_id, user_id=user_id
+        )
+    except (SQLAlchemyError, RuntimeError):
+        await websocket.close(code=1011)
+        return
+    if record is None:
         await websocket.close(code=4404)
         return
+
+    run = runs.get(run_id)
+    if run is None or run.tenant_id != tenant_id or run.user_id != user_id:
+        run = _deserialize_run(record)
+        runs[run_id] = run
+
     await manager.connect(websocket, run_id)
     try:
-        # Send initial state if run exists
-        if run_id in runs:
-            await websocket.send_text(json.dumps({
-                "type": "dag_update",
-                "data": get_run_dag(run_id),
-                "timestamp": time.time()
-            }))
-
+        await websocket.send_text(json.dumps({
+            "type": "dag_update",
+            "data": _run_to_dag(run),
+            "timestamp": time.time(),
+        }))
         while True:
-            # Keep connection alive
             data = await websocket.receive_text()
-            # Handle client messages (e.g., pause, cancel)
             try:
                 msg = json.loads(data)
                 if msg.get("type") == "ping":
-                    await websocket.send_text(json.dumps({"type": "pong", "timestamp": time.time()}))
-            except:
-                pass
+                    await websocket.send_text(json.dumps({
+                        "type": "pong",
+                        "timestamp": time.time(),
+                    }))
+            except (json.JSONDecodeError, AttributeError):
+                continue
     except WebSocketDisconnect:
+        manager.disconnect(websocket, run_id)
+    except Exception:
+        logger.exception("Dashboard WebSocket failed", extra={"run_id": run_id})
         manager.disconnect(websocket, run_id)
 
 
@@ -416,16 +431,47 @@ async def websocket_endpoint(websocket: WebSocket, run_id: str, ticket: str = Qu
 # ============================================================================
 
 @app.post("/api/auth/ws-ticket")
-async def create_ws_ticket(principal: Principal = Depends(require_principal)):
-    """Issue a one-use WebSocket ticket, valid for 30 seconds."""
-    now = time.time()
-    for expired_ticket, (_, expires_at) in list(ws_tickets.items()):
-        if expires_at <= now:
-            ws_tickets.pop(expired_ticket, None)
-    if len(ws_tickets) >= 10000:
-        raise HTTPException(status_code=503, detail="WebSocket ticket capacity reached")
+async def create_ws_ticket(
+    request: WsTicketRequest,
+    principal: Principal = Depends(require_principal),
+):
+    """Issue a run-bound one-use ticket; only its hash is stored."""
+    if not principal.user_id:
+        raise HTTPException(status_code=403, detail="Durable user identity required")
+    now = datetime.now(timezone.utc)
     ticket = secrets.token_urlsafe(32)
-    ws_tickets[ticket] = (principal, now + 30)
+    ticket_hash = hashlib.sha256(ticket.encode("utf-8")).hexdigest()
+    factory = get_session_factory()
+    try:
+        async with factory() as session:
+            run = (
+                await session.execute(
+                    select(DashboardRunRecord).where(
+                        DashboardRunRecord.id == request.run_id,
+                        DashboardRunRecord.tenant_id == principal.tenant_id,
+                        DashboardRunRecord.user_id == principal.user_id,
+                    )
+                )
+            ).scalars().one_or_none()
+            if run is None:
+                raise HTTPException(status_code=404, detail="Run not found")
+            await session.execute(
+                delete(WebSocketTicketRecord).where(
+                    WebSocketTicketRecord.expires_at <= now
+                )
+            )
+            session.add(WebSocketTicketRecord(
+                ticket_hash=ticket_hash,
+                user_id=principal.user_id,
+                tenant_id=principal.tenant_id,
+                run_id=request.run_id,
+                expires_at=now + timedelta(seconds=30),
+            ))
+            await session.commit()
+    except HTTPException:
+        raise
+    except (SQLAlchemyError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail="Ticket database unavailable") from exc
     return {"ticket": ticket, "expires_in": 30}
 
 
