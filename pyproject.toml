@@ -79,7 +79,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["cosmos", "cosmos.compiler", "cosmos.license", "cosmos.lsp", "solvens"]
+packages = ["cosmos", "cosmos.compiler", "cosmos.license", "cosmos.lsp", "solvens", "security"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
