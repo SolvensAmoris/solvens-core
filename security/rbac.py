@@ -240,6 +240,13 @@ class RBACManager:
             expires_at=expires_at,
         )
         
+        owner = self._users.get(user_id)
+        if owner is None:
+            raise ValueError("API key owner does not exist")
+        effective_team = team_id or owner.team_id
+        if effective_team != owner.team_id:
+            raise PermissionError("API keys cannot be bound outside the owner's tenant")
+        api_key.team_id = effective_team
         self._api_keys[api_key.id] = api_key
         return api_key, raw_key
     
@@ -313,15 +320,27 @@ class RBACManager:
     
     def api_key_can_access(self, api_key: APIKey, resource: str, action: str) -> bool:
         """Check if API key scope allows access to resource/action."""
-        # Admin keys can do everything
-        if "admin:*" in api_key.scopes:
+        # Never trust a caller-held APIKey object: reload authoritative state.
+        stored = self._api_keys.get(api_key.id)
+        if stored is None or stored.key_hash != api_key.key_hash or not stored.is_active:
+            return False
+        if stored.expires_at and stored.expires_at <= datetime.utcnow():
+            return False
+        owner = self._users.get(stored.user_id)
+        if owner is None:
+            return False
+        if stored.team_id != owner.team_id:
+            return False
+
+        # Admin scopes are powerful, but only after current key and owner validation.
+        if "admin:*" in stored.scopes:
             return True
         
         # Check scope patterns
         target_scope = f"{resource}:{action}"
         workflow_target = f"{resource}:*"
         
-        for scope in api_key.scopes:
+        for scope in stored.scopes:
             if self.scope_matches(scope, target_scope):
                 return True
             if self.scope_matches(scope, workflow_target):
@@ -352,11 +371,20 @@ class RBACManager:
     # Token Generation (for sessions)
     def generate_token(self, user: User, expires_hours: int = 24) -> str:
         """Generate a JWT token for a user."""
+        stored_user = self._users.get(user.id)
+        if (
+            stored_user is None
+            or stored_user.email != user.email
+            or stored_user.team_id != user.team_id
+            or stored_user.role != user.role
+        ):
+            raise PermissionError("Cannot mint a token for an unverified or modified user")
+
         payload = {
-            "user_id": user.id,
-            "email": user.email,
-            "team_id": user.team_id,
-            "role": user.role.value,
+            "user_id": stored_user.id,
+            "email": stored_user.email,
+            "team_id": stored_user.team_id,
+            "role": stored_user.role.value,
             "exp": datetime.utcnow() + timedelta(hours=expires_hours),
         }
         return jwt.encode(payload, self._get_secret(), algorithm="HS256")
@@ -364,7 +392,16 @@ class RBACManager:
     def validate_token(self, token: str) -> Optional[dict]:
         """Validate a JWT token and return payload."""
         try:
-            return jwt.decode(token, self._get_secret(), algorithms=["HS256"])
+            payload = jwt.decode(token, self._get_secret(), algorithms=["HS256"])
+            stored_user = self._users.get(payload.get("user_id"))
+            if (
+                stored_user is None
+                or payload.get("email") != stored_user.email
+                or payload.get("team_id") != stored_user.team_id
+                or payload.get("role") != stored_user.role.value
+            ):
+                return None
+            return payload
         except jwt.ExpiredSignatureError:
             return None
         except jwt.InvalidTokenError:
