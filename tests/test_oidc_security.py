@@ -48,7 +48,7 @@ class OIDCValidationTests(unittest.TestCase):
             "roles": ["developer"],
             "iss": "https://id.example.test/",
             "aud": "solvens-api",
-            "iat": 1_900_000_000,
+            "iat": 1_700_000_000,
             "exp": 4_000_000_000,
         }
         claims.update(overrides)
