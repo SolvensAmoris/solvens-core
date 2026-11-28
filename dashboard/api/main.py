@@ -448,12 +448,22 @@ async def websocket_endpoint(websocket: WebSocket, run_id: str, ticket: str = Qu
         await websocket.close(code=4404)
         return
 
-    run = runs.get(run_id)
+    run = runs.get(run_id) if run_id in run_tasks else None
     if run is None or run.tenant_id != tenant_id or run.user_id != user_id:
         run = _deserialize_run(record)
         runs[run_id] = run
 
-    await manager.connect(websocket, run_id)
+    try:
+        await manager.connect(
+            websocket,
+            run_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            sequence=record.sequence,
+        )
+    except PermissionError:
+        await websocket.close(code=4403)
+        return
     try:
         await websocket.send_text(json.dumps({
             "type": "dag_update",
@@ -578,7 +588,7 @@ async def get_run(run_id: str, principal: Principal = Depends(require_principal)
         raise HTTPException(status_code=503, detail="Run database unavailable") from exc
     if record is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    run = runs.get(run_id)
+    run = runs.get(run_id) if run_id in run_tasks else None
     if run is None or run.tenant_id != principal.tenant_id or run.user_id != principal.user_id:
         run = _deserialize_run(record)
         runs[run_id] = run
