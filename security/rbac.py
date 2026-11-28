@@ -61,7 +61,7 @@ ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.PROVIDER_VIEW,
     },
     Role.EDITOR: {
-        *Role.DEVELOPER.permissions,
+        *ROLE_PERMISSIONS[Role.DEVELOPER],
         Permission.WORKFLOW_CREATE,
         Permission.WORKFLOW_EDIT,
         Permission.PROVIDER_CONFIGURE,
@@ -72,7 +72,7 @@ ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.PROVIDER_VIEW,
     },
     Role.ADMIN: {
-        *Role.EDITOR.permissions,
+        *ROLE_PERMISSIONS[Role.EDITOR],
         Permission.WORKFLOW_DELETE,
         Permission.USER_MANAGE,
         Permission.TEAM_MANAGE,
@@ -255,12 +255,19 @@ class RBACManager:
     
     def can_run_workflow(self, user: User, workflow_id: str) -> bool:
         """Check if user can run a specific workflow."""
-        # Owner/Admin can do anything
+        # Reject stale/foreign user objects before evaluating privileges.
+        stored_user = self._users.get(user.id)
+        if stored_user is None or stored_user.team_id != user.team_id:
+            return False
+
+        # Tenant boundary applies to every role, including OWNER and ADMIN.
+        acl = self._workflow_acls.get(workflow_id)
+        if acl and acl.team_id != user.team_id:
+            return False
+
+        # Privileged roles bypass workflow allow-lists only inside their tenant.
         if user.role in (Role.OWNER, Role.ADMIN):
             return True
-        
-        # Check workflow ACL
-        acl = self._workflow_acls.get(workflow_id)
         if acl:
             # Check deny list
             if user.id in acl.deny_users or user.team_id in acl.deny_users:
@@ -352,4 +359,7 @@ class RBACManager:
     
     def _get_secret(self) -> str:
         import os
-        return os.getenv("SOLVENS_SECRET_KEY", "dev-secret-change-in-production")
+        secret = os.getenv("SOLVENS_SECRET_KEY")
+        if not secret:
+            raise RuntimeError("SOLVENS_SECRET_KEY must be configured; refusing insecure JWT fallback")
+        return secret
