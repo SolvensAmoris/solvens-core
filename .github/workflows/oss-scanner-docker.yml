@@ -1,0 +1,36 @@
+name: OSS Scanner Docker validation
+
+on:
+  push:
+    branches:
+      - oss-scanner/docker-audit
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-build:
+    name: Build image and run repository tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build audit image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .oss-scanner/Dockerfile
+          push: false
+          load: true
+          tags: solvens-core:oss-scanner-audit
+
+      - name: Confirm image exists
+        run: docker image inspect solvens-core:oss-scanner-audit
+
+      - name: Run tests with networking disabled
+        run: docker run --rm --network none solvens-core:oss-scanner-audit

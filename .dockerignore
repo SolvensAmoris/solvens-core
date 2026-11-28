@@ -1,0 +1,24 @@
+# Git metadata is not part of the source tree under audit.
+.git
+.git/**
+
+# Local Python environments and generated interpreter/test caches.
+.venv
+venv
+__pycache__
+**/__pycache__
+.pytest_cache
+**/.pytest_cache
+.mypy_cache
+**/.mypy_cache
+.ruff_cache
+**/.ruff_cache
+*.py[cod]
+
+# Local Node dependencies and generated frontend build outputs.
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+**/dist
