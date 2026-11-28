@@ -4,14 +4,6 @@ on:
   push:
     branches:
       - oss-scanner/docker-audit
-    paths:
-      - ".oss-scanner/Dockerfile"
-      - ".github/workflows/oss-scanner-docker.yml"
-      - "cosmos/**"
-      - "solvens/**"
-      - "tests/**"
-      - "pyproject.toml"
-      - "README.md"
   workflow_dispatch:
 
 permissions:
@@ -39,3 +31,6 @@ jobs:
 
       - name: Confirm image exists
         run: docker image inspect solvens-core:oss-scanner-audit
+
+      - name: Run tests with networking disabled
+        run: docker run --rm --network none solvens-core:oss-scanner-audit
