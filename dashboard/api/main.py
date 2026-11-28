@@ -18,7 +18,7 @@ from enum import Enum
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from security.oidc import Principal, require_principal, verify_access_token, OIDCConfigurationError
+from security.oidc import Principal, require_principal, require_role
 
 
 # ============================================================================
@@ -158,9 +158,9 @@ _cors_origins = [origin.strip() for origin in os.getenv("SOLVENS_CORS_ORIGINS", 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -221,11 +221,11 @@ async def list_runs(principal: Principal = Depends(require_principal)):
     return [
         {
             "run_id": run_id,
-            "workflow_name": run.state.workflow_name,
-            "status": run.state.status,
-            "tasks_completed": run.state.metrics.tasks_completed,
-            "tasks_total": run.state.metrics.tasks_total,
-            "created_at": run.state.created_at
+            "workflow_name": run.workflow_name,
+            "status": run.status,
+            "tasks_completed": run.metrics.tasks_completed,
+            "tasks_total": run.metrics.tasks_total,
+            "created_at": run.created_at
         }
         for run_id, run in runs.items() if run.tenant_id == principal.tenant_id
     ]
@@ -253,6 +253,7 @@ async def simulate_workflow(workflow: dict, principal: Principal = Depends(requi
     """
     Simulate a workflow and return estimated metrics.
     """
+    require_role(principal, "developer", "editor", "admin", "owner")
     workflow_name = workflow.get("name", "unnamed")
     tasks = workflow.get("tasks", [])
 
@@ -337,6 +338,7 @@ async def start_run(workflow: dict, principal: Principal = Depends(require_princ
     """
     Start a new run and return run_id.
     """
+    require_role(principal, "developer", "editor", "admin", "owner")
     run_id = str(uuid.uuid4())[:8]
     workflow_name = workflow.get("name", "unnamed")
     tasks = workflow.get("tasks", [])
