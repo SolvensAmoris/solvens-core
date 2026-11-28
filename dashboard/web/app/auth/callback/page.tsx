@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 
@@ -8,12 +8,14 @@ export default function OidcCallback() {
   const router = useRouter();
   const { configured, completeSignIn } = useAuth();
   const [error, setError] = useState("");
+  const handled = useRef(false);
 
   useEffect(() => {
-    if (!configured) {
+    if (!configured || handled.current) {
       setError("OIDC is not configured for this dashboard.");
       return;
     }
+    handled.current = true;
     let active = true;
     completeSignIn()
       .then(() => {
@@ -25,7 +27,7 @@ export default function OidcCallback() {
     return () => {
       active = false;
     };
-  }, [configured, router]);
+  }, [configured, completeSignIn, router]);
 
   return (
     <main className="flex h-full items-center justify-center bg-[#0f0f13] text-white">
