@@ -155,6 +155,8 @@ app = FastAPI(
 )
 
 _cors_origins = [origin.strip() for origin in os.getenv("SOLVENS_CORS_ORIGINS", "").split(",") if origin.strip()]
+if "*" in _cors_origins:
+    raise RuntimeError("Wildcard CORS origins are forbidden")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
