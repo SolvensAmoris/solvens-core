@@ -10,7 +10,8 @@ Set these environment variables in the API and dashboard runtimes:
 - `SOLVENS_OIDC_AUDIENCE`: audience issued specifically for the SOLVENS API.
 - `SOLVENS_OIDC_JWKS_URI`: HTTPS JWKS endpoint published by that issuer.
 - `SOLVENS_CORS_ORIGINS`: comma-separated exact browser origins; never use `*` with credentials.
-- `SOLVENS_RBAC_BOOTSTRAP_TOKEN`: high-entropy one-time bootstrap secret for the in-memory RBAC manager's first OWNER.
+- `SOLVENS_RBAC_BOOTSTRAP_TOKEN`: high-entropy bootstrap secret used to create the initial tenant and first OWNER.
+- `SOLVENS_SECRET_KEY`: at least 32 random bytes for legacy internal Cosmos RBAC JWT issuance; OIDC API validation does not use this secret.
 
 Do not start protected services with a shared static API token. If OIDC settings are absent, protected HTTP routes return 503; invalid or missing bearer tokens return 401.
 
@@ -37,7 +38,7 @@ Tickets and dashboard run state are currently process-local. Run one dashboard w
 
 ## RBAC bootstrap and mutation
 
-The first RBAC user must be an OWNER provisioned with `SOLVENS_RBAC_BOOTSTRAP_TOKEN`. Subsequent user creation and workflow ACL changes require an authoritative OWNER/ADMIN actor in the same tenant. ADMIN cannot grant ADMIN or OWNER. API-key creation/revocation requires an authenticated owner of the key or an authorized tenant administrator. Tenant creation remains a platform bootstrap operation.
+Create the initial tenant and first RBAC user (which must be an OWNER) with `SOLVENS_RBAC_BOOTSTRAP_TOKEN` before normal provisioning. Subsequent user creation and workflow ACL changes require an authoritative OWNER/ADMIN actor in the same tenant. ADMIN cannot grant ADMIN or OWNER. API-key creation/revocation requires an authenticated owner of the key or an authorized tenant administrator. Tenant creation remains a platform bootstrap operation.
 
 Both `security.RBACManager` and the primary `cosmos.security.RBAC` implementation are in-memory. Their bootstrap and actor checks close unauthenticated mutation paths in these managers, but they do not replace persistent identity/membership storage. Before multi-instance production use, persist users, memberships, API keys and ACLs transactionally and map OIDC `sub` to an immutable internal principal. The core API task-to-tenant ownership map is also process-local, so run a single worker until that mapping moves into shared durable storage.
 
