@@ -33,6 +33,7 @@ async def test_postgres_skip_locked_claims_distinct_rows_without_waiting():
                 TenantRecord(id=tenant_id, name="pg-skip-locked-test"),
                 UserRecord(id=user_id, status="active"),
             ])
+            await session.flush()
             session.add_all([
                 CoreTaskRecord(
                     id=task_id,
