@@ -342,7 +342,7 @@ class RBACManager:
     def has_permission(self, user: User, permission: Permission) -> bool:
         """Check if user has a specific permission."""
         stored_user = self._users.get(user.id)
-        if stored_user is None or stored_user.team_id != user.team_id or stored_user.role != user.role:
+        if stored_user is None or (stored_user.email, stored_user.team_id, stored_user.role) != (user.email, user.team_id, user.role):
             return False
         return permission in ROLE_PERMISSIONS.get(stored_user.role, set())
     
