@@ -67,10 +67,14 @@ async def resolve_durable_principal(
         raise IdentityResolutionError("Identity or active tenant membership not found")
 
     user, identity, tenant, membership = row
+    allowed_roles = {"viewer", "developer", "editor", "auditor", "admin", "owner"}
+    role = membership.role.lower()
+    if role not in allowed_roles:
+        raise IdentityResolutionError("Membership contains an unknown role")
     return DurablePrincipal(
         user_id=user.id,
         subject=identity.subject,
         issuer=identity.issuer,
         tenant_id=tenant.id,
-        roles=frozenset({membership.role.lower()}),
+        roles=frozenset({role}),
     )
