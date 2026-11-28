@@ -642,7 +642,9 @@ async def start_run(workflow: dict, principal: Principal = Depends(require_princ
     Start a new run and return run_id.
     """
     require_role(principal, "developer", "editor", "admin", "owner")
-    run_id = str(uuid.uuid4())[:8]
+    if not principal.user_id:
+        raise HTTPException(status_code=403, detail="Durable user identity required")
+    run_id = str(uuid.uuid4())
     workflow_name = workflow.get("name", "unnamed")
     tasks = workflow.get("tasks", [])
 
@@ -673,17 +675,24 @@ async def start_run(workflow: dict, principal: Principal = Depends(require_princ
     estimated_time_ms = parallel_groups * 5000
     estimated_cost_usd = len(dag_nodes) * 0.005
 
-    # Create run state
-    runs[run_id] = RunState(
+    # Create and persist run state before announcing or executing it.
+    run = RunState(
         run_id=run_id,
         workflow_name=workflow_name,
         tenant_id=principal.tenant_id,
         user_id=principal.user_id,
         tasks=dag_nodes,
         estimated_time_ms=estimated_time_ms,
-        estimated_cost_usd=estimated_cost_usd
+        estimated_cost_usd=estimated_cost_usd,
     )
-    runs[run_id].metrics.tasks_total = len(dag_nodes)
+    run.metrics.tasks_total = len(dag_nodes)
+    try:
+        await _persist_run(run, create=True)
+    except (SQLAlchemyError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail="Run database unavailable") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    runs[run_id] = run
 
     # Broadcast run start
     await manager.broadcast(run_id, WSMessage(
