@@ -190,7 +190,9 @@ class DurableTaskWorker:
         if lease_lost.is_set():
             await self._finish_cancelled(claim["id"])
             return True
-        await self._finish_success(claim["id"], result)
+        committed = await self._finish_success(claim["id"], result)
+        if not committed:
+            await self._finish_cancelled(claim["id"])
         return True
 
     async def _heartbeat_loop(
@@ -207,15 +209,19 @@ class DurableTaskWorker:
                 return
             except TimeoutError:
                 pass
-            factory = self._factory()
-            async with factory() as session:
-                owned = await heartbeat_task(
-                    session,
-                    task_id=task_id,
-                    worker_id=self.worker_id,
-                    lease_seconds=self.lease_seconds,
-                )
-                await session.commit()
+            try:
+                factory = self._factory()
+                async with factory() as session:
+                    owned = await heartbeat_task(
+                        session,
+                        task_id=task_id,
+                        worker_id=self.worker_id,
+                        lease_seconds=self.lease_seconds,
+                    )
+                    await session.commit()
+            except Exception as exc:
+                logger.error("Durable task heartbeat failed", task_id=task_id, error=str(exc))
+                owned = False
             if not owned:
                 lease_lost.set()
                 if not execution.done():
