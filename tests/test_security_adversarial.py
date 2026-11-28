@@ -24,8 +24,11 @@ class FakeLLM:
 
 class RBACAdversarialTests(unittest.TestCase):
     def setUp(self):
+        import os
+        os.environ["SOLVENS_RBAC_BOOTSTRAP_TOKEN"] = "test-bootstrap-secret"
         self.manager = RBACManager()
-        self.user = self.manager.create_user("dev@example.test", "tenant-a", Role.DEVELOPER)
+        self.owner = self.manager.create_user("owner@example.test", "tenant-a", Role.OWNER, bootstrap_token="test-bootstrap-secret")
+        self.user = self.manager.create_user("dev@example.test", "tenant-a", Role.DEVELOPER, actor=self.owner)
 
     def test_forged_user_cannot_mint_owner_jwt(self):
         forged = User(
@@ -36,24 +39,24 @@ class RBACAdversarialTests(unittest.TestCase):
             self.manager.generate_token(forged)
 
     def test_revoked_cached_api_key_object_is_rejected(self):
-        key, raw = self.manager.create_api_key(self.user.id, "ci", ["workflow:run"])
+        key, raw = self.manager.create_api_key(self.user.id, "ci", ["workflow:run"], actor=self.user)
         self.assertTrue(self.manager.api_key_can_access(key, "workflow", "run"))
-        self.manager.revoke_api_key(key.id)
+        self.manager.revoke_api_key(key.id, actor=self.user)
         self.assertFalse(self.manager.api_key_can_access(key, "workflow", "run"))
 
     def test_expired_cached_api_key_object_is_rejected(self):
-        key, _ = self.manager.create_api_key(self.user.id, "ci", ["admin:*"])
+        key, _ = self.manager.create_api_key(self.user.id, "ci", ["admin:*"], actor=self.user)
         key.expires_at = datetime.utcnow() - timedelta(seconds=1)
         self.assertFalse(self.manager.api_key_can_access(key, "workflow", "delete"))
 
     def test_api_key_cannot_be_bound_to_another_tenant(self):
         with self.assertRaises((ValueError, PermissionError)):
             self.manager.create_api_key(
-                self.user.id, "cross-tenant", ["admin:*"], team_id="tenant-b"
+                self.user.id, "cross-tenant", ["admin:*"], team_id="tenant-b", actor=self.user
             )
 
     def test_workflow_without_tenant_acl_is_denied(self):
-        owner = self.manager.create_user("owner@example.test", "tenant-a", Role.OWNER)
+        owner = self.manager.create_user("owner2@example.test", "tenant-a", Role.OWNER, actor=self.owner)
         self.assertFalse(self.manager.can_run_workflow(owner, "unregistered-workflow"))
 
     def test_token_validation_rejects_deleted_or_changed_identity(self):
