@@ -49,6 +49,14 @@ class RBACAdversarialTests(unittest.TestCase):
         key.expires_at = datetime.utcnow() - timedelta(seconds=1)
         self.assertFalse(self.manager.api_key_can_access(key, "workflow", "delete"))
 
+    def test_api_key_loses_privilege_after_owner_role_downgrade(self):
+        key, _ = self.manager.create_api_key(
+            self.user.id, "ci", ["workflow:run"], actor=self.user
+        )
+        self.assertTrue(self.manager.api_key_can_access(key, "workflow", "run"))
+        self.manager._users[self.user.id].role = Role.VIEWER
+        self.assertFalse(self.manager.api_key_can_access(key, "workflow", "run"))
+
     def test_api_key_cannot_be_bound_to_another_tenant(self):
         with self.assertRaises((ValueError, PermissionError)):
             self.manager.create_api_key(
