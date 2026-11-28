@@ -345,8 +345,6 @@ class AuditLogger:
                 resource_id=row[7],
                 action=row[8],
                 success=bool(row[9]),
-                actor_type=row[4],
-                team_id=row[5],
                 error_message=row[10],
                 ip_address=row[11],
                 user_agent=row[12],
