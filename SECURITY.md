@@ -4,7 +4,7 @@
 
 Please report suspected security vulnerabilities privately to the project maintainer:
 
-**Email:** luis@solvens.amoris
+**Email:** Luis.albm77@gmail.com
 
 Please do not publish unpatched vulnerability details in public issues or discussions. Include the affected commit or version, the relevant component, reproduction steps, impact, and any proof-of-concept that can be shared safely.
 
