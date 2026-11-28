@@ -38,7 +38,11 @@ export default function Dashboard() {
 
     const connect = async () => {
       try {
-        const response = await apiFetch("/api/auth/ws-ticket", { method: "POST" });
+        const response = await apiFetch("/api/auth/ws-ticket", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ run_id: currentRun.run_id }),
+        });
         const { ticket } = await response.json();
         if (cancelled) return;
         ws = new WebSocket(
