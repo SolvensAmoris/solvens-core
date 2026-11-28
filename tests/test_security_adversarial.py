@@ -45,7 +45,7 @@ class RBACAdversarialTests(unittest.TestCase):
         self.assertFalse(self.manager.api_key_can_access(key, "workflow", "run"))
 
     def test_expired_cached_api_key_object_is_rejected(self):
-        key, _ = self.manager.create_api_key(self.user.id, "ci", ["admin:*"], actor=self.user)
+        key, _ = self.manager.create_api_key(self.owner.id, "ci", ["admin:*"], actor=self.owner)
         key.expires_at = datetime.utcnow() - timedelta(seconds=1)
         self.assertFalse(self.manager.api_key_can_access(key, "workflow", "delete"))
 
@@ -58,6 +58,31 @@ class RBACAdversarialTests(unittest.TestCase):
     def test_workflow_without_tenant_acl_is_denied(self):
         owner = self.manager.create_user("owner2@example.test", "tenant-a", Role.OWNER, actor=self.owner)
         self.assertFalse(self.manager.can_run_workflow(owner, "unregistered-workflow"))
+
+
+    def test_developer_cannot_mint_admin_api_key(self):
+        with self.assertRaises(PermissionError):
+            self.manager.create_api_key(self.user.id, "admin", ["admin:*"], actor=self.user)
+
+    def test_rbac_mutators_require_authoritative_admin_actor(self):
+        with self.assertRaises(PermissionError):
+            self.manager.create_user("intruder@example.test", "tenant-a", Role.DEVELOPER)
+        forged_owner = User(
+            id=self.user.id, email=self.user.email,
+            team_id=self.user.team_id, role=Role.OWNER,
+        )
+        with self.assertRaises(PermissionError):
+            self.manager.create_user(
+                "intruder@example.test", "tenant-a", Role.DEVELOPER,
+                actor=forged_owner,
+            )
+
+    def test_admin_cannot_grant_owner_role(self):
+        admin = self.manager.create_user("admin@example.test", "tenant-a", Role.ADMIN, actor=self.owner)
+        with self.assertRaises(PermissionError):
+            self.manager.create_user(
+                "new-owner@example.test", "tenant-a", Role.OWNER, actor=admin
+            )
 
     def test_token_validation_rejects_deleted_or_changed_identity(self):
         import os
