@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from security.oidc import Principal
 from dashboard.api import main as dashboard
+from solvens.api.main import app as core_api
 
 
 class DashboardTenantBoundaryTests(unittest.TestCase):
@@ -24,6 +25,11 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
         self.auth_patch.start()
         self.addCleanup(self.auth_patch.stop)
         self.client = TestClient(dashboard.app)
+
+    def test_core_api_requires_auth_except_health(self):
+        client = TestClient(core_api)
+        self.assertEqual(client.get("/status").status_code, 401)
+        self.assertEqual(client.get("/health").status_code, 200)
 
     def test_dashboard_requires_bearer_token(self):
         response = self.client.get("/api/runs")
