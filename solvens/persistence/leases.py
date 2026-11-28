@@ -49,6 +49,8 @@ async def claim_next_task(
                     & (CoreTaskRecord.lease_expires_at <= current),
                 )
             )
+            .order_by(CoreTaskRecord.created_at.asc())
+            .limit(100)
             .with_for_update(skip_locked=True)
         )
     ).scalars().all()
