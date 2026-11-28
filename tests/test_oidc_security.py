@@ -1,6 +1,7 @@
 """OIDC validation regression tests using a local RSA key; no network IdP required."""
 import os
 import unittest
+import time
 from unittest.mock import patch
 
 import jwt
@@ -48,8 +49,8 @@ class OIDCValidationTests(unittest.TestCase):
             "roles": ["developer"],
             "iss": "https://id.example.test/",
             "aud": "solvens-api",
-            "iat": 1_700_000_000,
-            "exp": 4_000_000_000,
+            "iat": int(time.time()),
+            "exp": int(time.time()) + 600,
         }
         claims.update(overrides)
         return jwt.encode(claims, self.private_key, algorithm="RS256")
