@@ -41,7 +41,6 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
     def setUp(self):
         dashboard.runs.clear()
         dashboard.run_tasks.clear()
-        dashboard.ws_tickets.clear()
         self.db_path = tempfile.mktemp(suffix=".sqlite")
         self.engine = create_async_engine(
             f"sqlite+aiosqlite:///{self.db_path}", poolclass=NullPool
@@ -226,7 +225,7 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
         self.assertEqual(record.run_id, run_id)
         self.assertEqual(record.user_id, "db-user-a")
         self.assertIsNotNone(record.consumed_at)
-        self.assertEqual(dashboard.ws_tickets, {})
+        self.assertFalse(hasattr(dashboard, "ws_tickets"))
 
         with self.assertRaises(WebSocketDisconnect):
             with self.client.websocket_connect(f"/ws/run/{run_id}?ticket={ticket}"):
