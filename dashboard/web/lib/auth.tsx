@@ -21,6 +21,7 @@ type AuthContextValue = {
   loading: boolean;
   configured: boolean;
   signIn: () => Promise<void>;
+  completeSignIn: () => Promise<void>;
   signOut: () => Promise<void>;
   getAccessToken: () => Promise<string | null>;
   apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
@@ -98,6 +99,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await getManager().signinRedirect();
   }, []);
 
+  const completeSignIn = useCallback(async () => {
+    const signedIn = await getManager().signinRedirectCallback();
+    setUser(signedIn);
+  }, []);
+
   const signOut = useCallback(async () => {
     const oidc = getManager();
     setUser(null);
@@ -142,8 +148,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ user, loading, configured, signIn, signOut, getAccessToken, apiFetch }),
-    [user, loading, configured, signIn, signOut, getAccessToken, apiFetch],
+    () => ({ user, loading, configured, signIn, completeSignIn, signOut, getAccessToken, apiFetch }),
+    [user, loading, configured, signIn, completeSignIn, signOut, getAccessToken, apiFetch],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
