@@ -120,14 +120,17 @@ export default function Dashboard() {
           workflow_name: workflow.name,
           status: "running",
           tasks: Object.fromEntries(
-            simulation.nodes.map((n) => [
+            simulation.dag.nodes.map((n) => [
               n.id,
               {
                 id: n.id,
-                name: n.id,
+                name: n.data.label,
                 provider: n.data.provider,
                 model: "default",
                 status: "pending",
+                dependencies: simulation.dag.edges
+                  .filter((edge) => edge.target === n.id)
+                  .map((edge) => edge.source),
               },
             ])
           ),
@@ -153,26 +156,36 @@ export default function Dashboard() {
     }
   }, [simulation, reset, setCurrentRun, addLog, apiFetch]);
 
-  // Prepare DAG nodes and edges
-  const dagNodes = simulation?.dag?.nodes || currentRun
-    ? (simulation?.dag?.nodes || currentRun?.tasks
-        ? Object.values(currentRun?.tasks || {}).map((t) => ({
-            id: t.id,
-            data: {
-              label: t.name,
-              provider: t.provider,
-              status: t.status,
-              cost_usd: t.cost_usd,
-            },
-          }))
-        : [])
-    : [];
+  // Prepare DAG nodes and edges from the current simulation or run.
+  const dagNodes = simulation
+    ? simulation.dag.nodes.map((node) => ({
+        id: node.id,
+        data: {
+          label: node.data.label,
+          provider: node.data.provider,
+          status: node.data.status || "pending",
+          cost_usd: node.data.estimated_cost,
+        },
+      }))
+    : currentRun
+      ? Object.values(currentRun.tasks).map((task) => ({
+          id: task.id,
+          data: {
+            label: task.name,
+            provider: task.provider,
+            status: task.status,
+            cost_usd: task.cost_usd,
+          },
+        }))
+      : [];
 
-  const dagEdges = simulation?.dag?.edges || currentRun
-    ? (simulation?.dag?.edges || Object.values(currentRun?.tasks || {}).flatMap((t) =>
-        t.dependencies.map((dep) => ({ source: dep, target: t.id }))
-      ))
-    : [];
+  const dagEdges = simulation
+    ? simulation.dag.edges
+    : currentRun
+      ? Object.values(currentRun.tasks).flatMap((task) =>
+          task.dependencies.map((dependency) => ({ source: dependency, target: task.id })),
+        )
+      : [];
 
   if (!configured) {
     return <div className="flex h-full items-center justify-center text-amber-300">Dashboard OIDC configuration is missing.</div>;
