@@ -112,9 +112,9 @@ class PIIRedactor:
                 0.75
             ),
             
-            # API Key patterns
+            # Generic API key patterns
             PIICategory.API_KEY: (
-                re.compile(r'\b(?:sk|api|key|token)[_-]?(?:live|test)?[_-]?[a-zA-Z0-9]{20,}\b', re.IGNORECASE),
+                re.compile(r'\b(?:(?:sk|api|key|token)[_-]?(?:live|test)?[_-]?[a-zA-Z0-9]{20,}|(?:AKIA|A3T|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16})\b', re.IGNORECASE),
                 0.85
             ),
             
@@ -124,11 +124,9 @@ class PIIRedactor:
                 0.90
             ),
             
-            # AWS-style keys
-            PIICategory.API_KEY: (
-                re.compile(r'\b(?:AKIA|A3T|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}\b'),
-                0.95
-            ),
+            # AWS access key IDs are included in the same API-key matcher.
+            # Keep one dictionary entry per category to avoid overwriting patterns.
+
         }
     
     def detect(self, text: str) -> list[PIIMatch]:
@@ -265,48 +263,34 @@ class PIIValidationError(Exception):
 
 
 class PIIAwareLLMWrapper:
-    """
-    Wrap an LLM provider to automatically redact PII.
-    
-    Usage:
-        llm = OpenAIProvider()
-        safe_llm = PIIAwareLLMWrapper(llm, strict_mode=True)
-        
-        # Automatically redacts PII before sending
-        response = safe_llm.chat([{"role": "user", "content": "My SSN is 123-45-6789"}])
-    """
-    
+    """Redact PII recursively from user and tool message payloads before dispatch."""
+
     def __init__(self, llm_provider, strict_mode: bool = False):
         self.llm = llm_provider
         self.redactor = PIIRedactor(strict_mode=strict_mode)
-    
+
+    def _redact_value(self, value):
+        if isinstance(value, str):
+            return self.redactor.redact(value)[0]
+        if isinstance(value, dict):
+            return {key: self._redact_value(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [self._redact_value(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(self._redact_value(item) for item in value)
+        return value
+
+    def _redact_messages(self, messages: list[dict]) -> list[dict]:
+        redacted = []
+        for message in messages:
+            msg = dict(message)
+            if msg.get("role") in {"user", "tool"} and "content" in msg:
+                msg["content"] = self._redact_value(msg["content"])
+            redacted.append(msg)
+        return redacted
+
     async def chat(self, messages: list[dict]) -> dict:
-        """Send message with PII redaction."""
-        redacted_messages = []
-        
-        for msg in messages:
-            if msg.get("role") == "user" and isinstance(msg.get("content"), str):
-                redacted_content, matches = self.redactor.redact(msg["content"])
-                msg = {**msg, "content": redacted_content}
-                
-                if matches:
-                    # Log PII redaction (but don't fail)
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.info(f"PII redacted: {[m.category.value for m in matches]}")
-            
-            redacted_messages.append(msg)
-        
-        return await self.llm.chat(redacted_messages)
-    
+        return await self.llm.chat(self._redact_messages(messages))
+
     def chat_sync(self, messages: list[dict]) -> dict:
-        """Synchronous version of chat."""
-        redacted_messages = []
-        
-        for msg in messages:
-            if msg.get("role") == "user" and isinstance(msg.get("content"), str):
-                redacted_content, _ = self.redactor.redact(msg["content"])
-                msg = {**msg, "content": redacted_content}
-            redacted_messages.append(msg)
-        
-        return self.llm.chat_sync(redacted_messages)
+        return self.llm.chat_sync(self._redact_messages(messages))
