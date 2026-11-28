@@ -108,6 +108,8 @@ def _durable_task_status(value: str) -> TaskStatus:
 
 def _durable_task_description(record: CoreTaskRecord) -> str:
     envelope = record.payload or {}
+    if not isinstance(envelope, dict):
+        return ""
     input_payload = envelope.get("input", {})
     description = input_payload.get("description", "") if isinstance(input_payload, dict) else ""
     return description if isinstance(description, str) else ""
