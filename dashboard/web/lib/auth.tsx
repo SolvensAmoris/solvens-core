@@ -153,7 +153,7 @@ export function useAuth() {
   return context;
 }
 
-export function AuthControls() {
+export async function completeSignIn() {\n  await getManager().signinRedirectCallback();\n}\n\nexport function AuthControls() {
   const { user, loading, configured, signIn, signOut } = useAuth();
   if (!configured) {
     return <span className="text-xs text-amber-300">OIDC not configured</span>;
