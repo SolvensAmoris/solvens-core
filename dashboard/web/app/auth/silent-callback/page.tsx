@@ -13,9 +13,10 @@ export default function OidcSilentCallback() {
       setError("OIDC is not configured for this dashboard.");
       return;
     }
-    if (!completion.current) completion.current = completeSilentSignIn();
+    const completionPromise =
+      completion.current ?? (completion.current = completeSilentSignIn());
     let active = true;
-    completion.current.catch((reason: unknown) => {
+    completionPromise.catch((reason: unknown) => {
       if (active) {
         setError(reason instanceof Error ? reason.message : "Silent OIDC callback failed");
       }
