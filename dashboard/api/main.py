@@ -164,6 +164,7 @@ class ConnectionManager:
         *,
         run_id: str,
         tenant_id: str,
+        user_id: str,
         sequence: int,
         snapshot: dict,
     ) -> None:
@@ -171,7 +172,7 @@ class ConnectionManager:
         if not self.active_connections.get(run_id):
             return
         owner = self.run_owners.get(run_id)
-        if owner is None or owner[0] != tenant_id:
+        if owner is None or owner != (tenant_id, user_id):
             return
         if sequence <= self.last_sequence.get(run_id, 0):
             return
@@ -315,6 +316,7 @@ async def _persist_run(run: RunState, *, create: bool = False) -> None:
             event_type="dashboard.run.snapshot",
             payload={
                 "sequence": record.sequence,
+                "user_id": run.user_id,
                 "snapshot": _run_to_dag(run),
             },
         ))
@@ -436,11 +438,13 @@ async def _redis_stream_listener(redis_url: str) -> None:
                         sequence = int(payload.get("sequence", 0))
                         run_id = event.get("aggregate_id")
                         tenant_id = event.get("tenant_id")
-                        if not isinstance(snapshot, dict) or not run_id or not tenant_id:
+                        user_id = payload.get("user_id")
+                        if not isinstance(snapshot, dict) or not run_id or not tenant_id or not user_id:
                             continue
                         await manager.broadcast_snapshot(
                             run_id=run_id,
                             tenant_id=tenant_id,
+                            user_id=user_id,
                             sequence=sequence,
                             snapshot=snapshot,
                         )
