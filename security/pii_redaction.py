@@ -212,7 +212,6 @@ class PIIRedactor:
                 redacted_value, matches = self.redact(value)
                 redacted[key] = redacted_value
                 for m in matches:
-                    m.metadata = {"path": current_path}
                     all_matches.append(m)
             elif isinstance(value, dict):
                 redacted[key], nested_matches = self.redact_dict(value, current_path)
@@ -224,8 +223,11 @@ class PIIRedactor:
                         redacted_item, matches = self.redact(item)
                         redacted_list.append(redacted_item)
                         for m in matches:
-                            m.metadata = {"path": f"{current_path}[{i}]"}
                             all_matches.append(m)
+                    elif isinstance(item, (dict, list)):
+                        redacted_item, nested_matches = self._redact_nested(item)
+                        redacted_list.append(redacted_item)
+                        all_matches.extend(nested_matches)
                     else:
                         redacted_list.append(item)
                 redacted[key] = redacted_list
@@ -234,6 +236,25 @@ class PIIRedactor:
         
         return redacted, all_matches
     
+    def _redact_nested(self, value):
+        """Recursively redact strings inside nested dict/list structures."""
+        if isinstance(value, str):
+            return self.redact(value)
+        if isinstance(value, dict):
+            output, matches = {}, []
+            for key, item in value.items():
+                output[key], found = self._redact_nested(item)
+                matches.extend(found)
+            return output, matches
+        if isinstance(value, list):
+            output, matches = [], []
+            for item in value:
+                redacted_item, found = self._redact_nested(item)
+                output.append(redacted_item)
+                matches.extend(found)
+            return output, matches
+        return value, []
+
     def summary(self, matches: list[PIIMatch]) -> dict:
         """
         Generate a summary of detected PII.
