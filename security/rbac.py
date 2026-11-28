@@ -386,34 +386,30 @@ class RBACManager:
         return scope_pattern == target
     
     def api_key_can_access(self, api_key: APIKey, resource: str, action: str) -> bool:
-        """Check if API key scope allows access to resource/action."""
-        # Never trust a caller-held APIKey object: reload authoritative state.
+        """Check scopes against the authoritative key and the owner's current role."""
         stored = self._api_keys.get(api_key.id)
         if stored is None or stored.key_hash != api_key.key_hash or not stored.is_active:
             return False
         if stored.expires_at and stored.expires_at <= datetime.utcnow():
             return False
         owner = self._users.get(stored.user_id)
-        if owner is None:
+        if owner is None or stored.team_id != owner.team_id:
             return False
-        if stored.team_id != owner.team_id:
+        try:
+            required = Permission(f"{resource}:{action}")
+        except ValueError:
             return False
-
-        # Admin scopes are powerful, but only after current key and owner validation.
-        if "admin:*" in stored.scopes:
-            return True
-        
-        # Check scope patterns
+        if required not in ROLE_PERMISSIONS.get(owner.role, set()):
+            return False
+        if "admin:*" in stored.scopes or "*:*" in stored.scopes:
+            return owner.role in (Role.ADMIN, Role.OWNER)
         target_scope = f"{resource}:{action}"
         workflow_target = f"{resource}:*"
-        
-        for scope in stored.scopes:
-            if self.scope_matches(scope, target_scope):
-                return True
-            if self.scope_matches(scope, workflow_target):
-                return True
-        
-        return False
+        return any(
+            self.scope_matches(scope, target_scope)
+            or self.scope_matches(scope, workflow_target)
+            for scope in stored.scopes
+        )
     
     # Workflow ACL
     def set_workflow_acl(
