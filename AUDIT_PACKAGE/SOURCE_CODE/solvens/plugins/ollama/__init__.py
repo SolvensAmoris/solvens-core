@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, AsyncIterator
+import json
 
 import httpx
 
@@ -64,7 +65,9 @@ class OllamaClient(ProviderClient):
             stream.raise_for_status()
             async for line in stream.aiter_lines():
                 if line.strip():
-                    chunk = eval(line)  # Ollama returns JSON per line
+                    chunk = json.loads(line)  # Ollama returns one JSON object per line
+                    if not isinstance(chunk, dict):
+                        raise ValueError("Invalid Ollama stream chunk: expected JSON object")
                     if "response" in chunk:
                         yield chunk["response"]
 
