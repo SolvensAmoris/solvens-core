@@ -1,25 +1,24 @@
-# SOLVENS CORE: reproducible environment for Anthropic OSS Scanner.
-# Build has network access; the scanner's audit phase runs offline.
+# Build-time network access is used only to install declared dependencies.
+# Anthropic's audit phase runs the resulting image without network access.
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-WORKDIR /opt/solvens-core
+WORKDIR /src
 
-# pyproject.toml declares README.md as package metadata.
-COPY pyproject.toml README.md ./
-COPY cosmos/ ./cosmos/
-COPY solvens/ ./solvens/
-COPY tests/ ./tests/
+# Keep the complete repository available to the offline auditor.
+COPY . /src
 
-# Install the project and its test/development dependencies during image build.
-RUN python -m pip install --no-cache-dir ".[dev]" \
-    && python -m compileall -q cosmos solvens
+# Install runtime extras used by the API and storage layers, plus test tools.
+# The optional vector/ML extra pulls a large model stack; its source remains
+# available for static review but that optional runtime is not installed here.
+RUN python -m pip install --no-cache-dir ".[api,storage,dev]" \
+    && python -m compileall -q cosmos solvens security
 
-# Run the complete repository test suite at build time. A failed test fails the image.
+# Fail the image build if the maintained Python test suite fails.
 RUN python -m pytest tests/ -q
 
-# Keep the source tree and test runner available to the offline security auditor.
+# The scanner can rerun tests inside its network-isolated audit container.
 CMD ["python", "-m", "pytest", "tests/", "-q"]
