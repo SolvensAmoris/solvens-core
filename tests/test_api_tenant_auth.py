@@ -181,11 +181,12 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
         self.assertEqual(metrics.json()["tasks_completed"], 1)
 
     def test_run_listing_does_not_disclose_other_tenants(self):
-        self.client.post(
+        created = self.client.post(
             "/api/run",
             headers={"Authorization": "Bearer tenant-a"},
             json={"name": "tenant-a-flow", "tasks": []},
         )
+        self._wait_for_completed(created.json()["run_id"])
         listed = self.client.get(
             "/api/runs",
             headers={"Authorization": "Bearer tenant-b"},
