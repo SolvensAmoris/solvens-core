@@ -146,6 +146,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 runs: dict[str, RunState] = {}
+run_tasks: dict[str, asyncio.Task] = {}
 ws_tickets: dict[str, tuple[Principal, float]] = {}  # legacy test hook; never stores live tickets
 
 
@@ -707,7 +708,9 @@ async def start_run(workflow: dict, principal: Principal = Depends(require_princ
     ))
 
     # Start async execution
-    asyncio.create_task(execute_run(run_id, dag_nodes, dag_edges))
+    task = asyncio.create_task(execute_run(run_id, dag_nodes, dag_edges))
+    run_tasks[run_id] = task
+    task.add_done_callback(lambda completed, rid=run_id: _forget_run_task(rid, completed))
 
     return {"run_id": run_id, "status": "started"}
 
@@ -715,6 +718,11 @@ async def start_run(workflow: dict, principal: Principal = Depends(require_princ
 # ============================================================================
 # Helper Functions
 # ============================================================================
+
+def _forget_run_task(run_id: str, task: asyncio.Task) -> None:
+    if run_tasks.get(run_id) is task:
+        run_tasks.pop(run_id, None)
+
 
 def calculate_parallel_groups(edges: list, total_nodes: int) -> int:
     """Calculate number of parallel execution groups."""
@@ -844,7 +852,7 @@ async def execute_run(run_id: str, dag_nodes: dict, dag_edges: list):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "active_runs": len(runs)}
+    return {"status": "ok", "active_runs": len(run_tasks)}
 
 
 @app.get("/")
