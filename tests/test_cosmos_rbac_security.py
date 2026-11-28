@@ -2,7 +2,7 @@
 import os
 import unittest
 
-from cosmos.security.rbac import RBAC, PermissionDenied, Role, User
+from cosmos.security.rbac import RBAC, Permission, PermissionDenied, Role, User, WorkflowACL
 
 
 class CosmosRBACSecurityTests(unittest.TestCase):
@@ -40,9 +40,7 @@ class CosmosRBACSecurityTests(unittest.TestCase):
 
     def test_owner_cannot_bypass_foreign_tenant_acl(self):
         self.assertFalse(self.rbac.can_run_workflow(self.owner, "missing-flow"))
-        self.rbac._workflow_acls["foreign-flow"] = self.rbac._workflow_acls.get(
-            "foreign-flow"
-        ) or __import__("cosmos.security.rbac", fromlist=["WorkflowACL"]).WorkflowACL(
+        self.rbac._workflow_acls["foreign-flow"] = WorkflowACL(
             "foreign-flow", "tenant-b", is_public=True
         )
         self.assertFalse(self.rbac.can_run_workflow(self.owner, "foreign-flow"))
@@ -79,9 +77,7 @@ class CosmosRBACSecurityTests(unittest.TestCase):
             team_id=self.developer.team_id,
             role=Role.OWNER,
         )
-        self.assertFalse(self.rbac.check_permission(forged, __import__(
-            "cosmos.security.rbac", fromlist=["Permission"]
-        ).Permission.USER_MANAGE))
+        self.assertFalse(self.rbac.check_permission(forged, Permission.USER_MANAGE))
 
 
 if __name__ == "__main__":
