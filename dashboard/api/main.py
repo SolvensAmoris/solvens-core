@@ -726,131 +726,116 @@ def calculate_parallel_groups(edges: list, total_nodes: int) -> int:
 
 
 def get_run_dag(run_id: str) -> dict:
-    """Get DAG representation of a run."""
-    run = runs[run_id]
-
-    nodes = []
-    for task in run.tasks.values():
-        nodes.append({
-            "id": task.id,
-            "type": "task",
-            "data": {
-                "label": task.name,
-                "provider": task.provider,
-                "model": task.model,
-                "status": task.status.value,
-                "cost_usd": task.cost_usd,
-                "tokens": task.input_tokens + task.output_tokens
-            }
-        })
-
-    edges = []
-    for task in run.tasks.values():
-        for dep in task.dependencies:
-            edges.append({
-                "source": dep,
-                "target": task.id,
-                "type": "default"
-            })
-
-    return {
-        "run_id": run_id,
-        "workflow_name": run.workflow_name,
-        "status": run.status,
-        "nodes": nodes,
-        "edges": edges,
-        "metrics": asdict(run.metrics),
-        "estimated_time_ms": run.estimated_time_ms,
-        "estimated_cost_usd": run.estimated_cost_usd
-    }
+    """Get the current in-process DAG representation of a persisted run."""
+    return _run_to_dag(runs[run_id])
 
 
 async def execute_run(run_id: str, dag_nodes: dict, dag_edges: list):
-    """Execute a run and broadcast events."""
-    run = runs[run_id]
-    run.status = "running"
+    """Execute a run and persist each durable state transition."""
+    run = runs.get(run_id)
+    if run is None:
+        return
+    started_at = time.time()
+    completed: set[str] = set()
+    pending: set[str] = set(run.tasks.keys())
 
-    # Simple topological sort execution
-    completed = set()
-    pending = set(dag_nodes.keys())
+    try:
+        run.status = "running"
+        await _persist_run(run)
 
-    while pending:
-        # Find tasks with all dependencies completed
-        ready = []
-        for task_id in pending:
-            deps = dag_nodes[task_id].dependencies
-            if all(d in completed for d in deps):
-                ready.append(task_id)
+        while pending:
+            ready = []
+            for task_id in pending:
+                deps = run.tasks[task_id].dependencies
+                if all(dependency in completed for dependency in deps):
+                    ready.append(task_id)
 
-        if not ready:
-            # Deadlock or all blocked
-            break
+            if not ready:
+                run.status = "error"
+                break
 
-        # Execute ready tasks in parallel
-        for task_id in ready:
-            task = dag_nodes[task_id]
+            for task_id in ready:
+                task = run.tasks[task_id]
+                task.status = TaskStatus.RUNNING
+                task.start_time = time.time()
+                run.metrics.parallelism = len(ready)
+                await _persist_run(run)
 
-            # Broadcast task start
-            await manager.broadcast(run_id, WSMessage(
-                type=WSMessageType.TASK_START,
-                data={
-                    "task": task_id,
-                    "provider": task.provider,
-                    "model": task.model
-                }
-            ))
+                await manager.broadcast(run_id, WSMessage(
+                    type=WSMessageType.TASK_START,
+                    data={
+                        "task": task_id,
+                        "provider": task.provider,
+                        "model": task.model,
+                    },
+                ))
 
-            # Update state
-            task.status = TaskStatus.RUNNING
-            task.start_time = time.time()
-            run.metrics.parallelism = len(ready)
+                # Simulated execution placeholder; replace with actual handler dispatch.
+                await asyncio.sleep(0.5)
 
-            # Simulate execution (replace with actual execution)
-            await asyncio.sleep(0.5)  # Simulated delay
+                task.status = TaskStatus.DONE
+                task.end_time = time.time()
+                task.output_tokens = 1000
+                task.cost_usd = 0.002
+                pending.remove(task_id)
+                completed.add(task_id)
+                run.metrics.tasks_completed += 1
+                run.metrics.total_cost_usd += task.cost_usd
+                run.metrics.total_tokens += task.input_tokens + task.output_tokens
 
-            # Complete task
-            task.status = TaskStatus.DONE
-            task.end_time = time.time()
-            task.output_tokens = 1000
-            task.cost_usd = 0.002
-            pending.remove(task_id)
-            completed.add(task_id)
+                await _persist_run(run)
+                await manager.broadcast(run_id, WSMessage(
+                    type=WSMessageType.TASK_END,
+                    data={
+                        "task": task_id,
+                        "tokens": task.input_tokens + task.output_tokens,
+                        "cost_usd": task.cost_usd,
+                        "duration_ms": (task.end_time - task.start_time) * 1000,
+                    },
+                ))
+                await manager.broadcast(run_id, WSMessage(
+                    type=WSMessageType.METRIC_UPDATE,
+                    data=asdict(run.metrics),
+                ))
 
-            # Update metrics
-            run.metrics.tasks_completed += 1
-            run.metrics.total_cost_usd += task.cost_usd
-            run.metrics.total_tokens += task.input_tokens + task.output_tokens
-
-            # Broadcast task end
-            await manager.broadcast(run_id, WSMessage(
-                type=WSMessageType.TASK_END,
-                data={
-                    "task": task_id,
-                    "tokens": task.input_tokens + task.output_tokens,
-                    "cost_usd": task.cost_usd,
-                    "duration_ms": (task.end_time - task.start_time) * 1000
-                }
-            ))
-
-            # Broadcast metric update
-            await manager.broadcast(run_id, WSMessage(
-                type=WSMessageType.METRIC_UPDATE,
-                data=asdict(run.metrics)
-            ))
-
-    # Run complete
-    run.status = "completed"
-    run.metrics.total_time_ms = (time.time() - run.created_at) * 1000
-
-    await manager.broadcast(run_id, WSMessage(
-        type=WSMessageType.RUN_END,
-        data={
-            "run_id": run_id,
-            "status": "completed",
-            "total_time_ms": run.metrics.total_time_ms,
-            "total_cost_usd": run.metrics.total_cost_usd
-        }
-    ))
+        if run.status != "error":
+            run.status = "completed"
+        run.metrics.total_time_ms = (time.time() - started_at) * 1000
+        await _persist_run(run)
+        await manager.broadcast(run_id, WSMessage(
+            type=WSMessageType.RUN_END,
+            data={
+                "run_id": run_id,
+                "status": run.status,
+                "total_time_ms": run.metrics.total_time_ms,
+                "total_cost_usd": run.metrics.total_cost_usd,
+            },
+        ))
+    except asyncio.CancelledError:
+        run.status = "cancelled"
+        run.metrics.total_time_ms = (time.time() - started_at) * 1000
+        try:
+            await _persist_run(run)
+        except Exception:
+            logger.exception("Could not persist cancelled dashboard run", extra={"run_id": run_id})
+        raise
+    except Exception:
+        run.status = "error"
+        run.metrics.total_time_ms = (time.time() - started_at) * 1000
+        logger.exception("Dashboard run execution failed", extra={"run_id": run_id})
+        try:
+            await _persist_run(run)
+        except Exception:
+            logger.exception("Could not persist failed dashboard run", extra={"run_id": run_id})
+        await manager.broadcast(run_id, WSMessage(
+            type=WSMessageType.RUN_END,
+            data={
+                "run_id": run_id,
+                "status": "error",
+                "total_time_ms": run.metrics.total_time_ms,
+                "total_cost_usd": run.metrics.total_cost_usd,
+            },
+        ))
 
 
 # ============================================================================
