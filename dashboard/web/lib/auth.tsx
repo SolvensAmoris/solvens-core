@@ -22,6 +22,7 @@ type AuthContextValue = {
   configured: boolean;
   signIn: () => Promise<void>;
   completeSignIn: () => Promise<void>;
+  completeSilentSignIn: () => Promise<void>;
   signOut: () => Promise<void>;
   getAccessToken: () => Promise<string | null>;
   apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
@@ -52,15 +53,23 @@ function getManager(): UserManager {
   const redirectUri =
     process.env.NEXT_PUBLIC_OIDC_REDIRECT_URI ||
     `${window.location.origin}/auth/callback`;
+  const silentRedirectUri =
+    process.env.NEXT_PUBLIC_OIDC_SILENT_REDIRECT_URI ||
+    `${window.location.origin}/auth/silent-callback`;
+  const extraScope = process.env.NEXT_PUBLIC_OIDC_EXTRA_SCOPE?.trim();
   manager = new UserManager({
     authority,
     client_id: clientId,
     redirect_uri: redirectUri,
+    silent_redirect_uri: silentRedirectUri,
     post_logout_redirect_uri:
       process.env.NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI ||
       window.location.origin,
     response_type: "code",
-    scope: `openid profile email ${apiScope}`,
+    disablePKCE: false,
+    scope: ["openid", "profile", "email", apiScope, extraScope]
+      .filter(Boolean)
+      .join(" "),
     loadUserInfo: false,
     automaticSilentRenew: false,
     // Tokens stay in memory. OIDC state uses sessionStorage across the redirect.
@@ -104,11 +113,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(signedIn);
   }, []);
 
+  const completeSilentSignIn = useCallback(async () => {
+    await getManager().signinSilentCallback();
+  }, []);
+
   const signOut = useCallback(async () => {
     const oidc = getManager();
+    const current = await oidc.getUser();
     setUser(null);
-    await oidc.removeUser();
-    await oidc.signoutRedirect();
+    await oidc.signoutRedirect({ id_token_hint: current?.id_token });
   }, []);
 
   const getAccessToken = useCallback(async (): Promise<string | null> => {
@@ -154,8 +167,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ user, loading, configured, signIn, completeSignIn, signOut, getAccessToken, apiFetch }),
-    [user, loading, configured, signIn, completeSignIn, signOut, getAccessToken, apiFetch],
+    () => ({
+      user,
+      loading,
+      configured,
+      signIn,
+      completeSignIn,
+      completeSilentSignIn,
+      signOut,
+      getAccessToken,
+      apiFetch,
+    }),
+    [
+      user,
+      loading,
+      configured,
+      signIn,
+      completeSignIn,
+      completeSilentSignIn,
+      signOut,
+      getAccessToken,
+      apiFetch,
+    ],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

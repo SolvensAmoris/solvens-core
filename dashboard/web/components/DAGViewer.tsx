@@ -152,8 +152,8 @@ export default function DAGViewer({ nodes, edges, onNodeClick }: DAGViewerProps)
         <Controls />
         <MiniMap
           nodeColor={(node) => {
-            const status = node.data?.status;
-            return statusColors[status || "pending"] || statusColors.pending;
+            const status = String(node.data?.status ?? "pending");
+            return statusColors[status as keyof typeof statusColors] || statusColors.pending;
           }}
           maskColor="rgba(0, 0, 0, 0.8)"
           style={{ backgroundColor: "#16161d" }}

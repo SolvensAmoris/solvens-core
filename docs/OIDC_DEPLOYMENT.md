@@ -86,3 +86,23 @@ Set `SOLVENS_REDIS_URL` to enable the dashboard's transactional outbox publisher
 Run snapshot updates are inserted into `outbox_events` in the same transaction as the run snapshot. The publisher writes them to `solvens:dashboard:events` and marks them published only after Redis accepts the entry. Redis Stream entries include event IDs and run sequence numbers; consumers ignore duplicate or stale snapshots.
 
 Publication is at-least-once: a crash between Redis `XADD` and the database marker can publish the same event again. The sequence guard makes duplicate delivery harmless. REST and WebSocket connection setup always load the durable database snapshot, so a client reconnect does not depend on Redis Pub/Sub retaining past messages. Keep Redis Stream persistence enabled and size retention for the desired replay window.
+
+
+## Dashboard Authorization Code + PKCE
+
+Configure the dashboard as a **public OIDC client** using Authorization Code flow with PKCE S256. Do not create or expose a client secret in any `NEXT_PUBLIC_*` variable. The frontend explicitly uses `response_type: "code"` and keeps PKCE enabled.
+
+Set the variables in `dashboard/web/.env.example`:
+
+- `NEXT_PUBLIC_OIDC_AUTHORITY`: issuer/authority URL.
+- `NEXT_PUBLIC_OIDC_CLIENT_ID`: public client ID.
+- `NEXT_PUBLIC_OIDC_API_SCOPE`: API scope required by the backend.
+- `NEXT_PUBLIC_API_URL`: dashboard API base URL.
+- `NEXT_PUBLIC_OIDC_REDIRECT_URI`: exact `/auth/callback` URI registered at the provider.
+- `NEXT_PUBLIC_OIDC_SILENT_REDIRECT_URI`: exact `/auth/silent-callback` URI registered at the provider.
+- `NEXT_PUBLIC_OIDC_POST_LOGOUT_REDIRECT_URI`: registered post-logout URI.
+- `NEXT_PUBLIC_OIDC_EXTRA_SCOPE`: optional provider scope, such as `offline_access`, if refresh tokens are supported.
+
+The OIDC state store uses `sessionStorage`; access and ID tokens use an in-memory user store, not localStorage. Silent renewal uses the registered silent callback and falls back to an interactive redirect if renewal fails. Sign-out retains the ID-token hint for the provider's end-session request.
+
+Register both callback URLs exactly, require PKCE S256, disable implicit/hybrid flows, and configure the API to validate issuer, audience, expiry, and authorization claims. These frontend settings are public configuration, not secrets.
