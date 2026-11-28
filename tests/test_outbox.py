@@ -59,7 +59,7 @@ async def test_outbox_publisher_marks_only_after_stream_accepts_event():
     async with factory() as session:
         record = await session.get(OutboxEventRecord, event_id)
         assert record.published_at is not None
-        assert await publisher.publish_once() == 0
+    assert await publisher.publish_once() == 0
     await engine.dispose()
 
 
