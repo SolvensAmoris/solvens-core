@@ -160,14 +160,18 @@ class TestRBAC:
         """Test API key creation."""
         from cosmos.security.rbac import RBAC, Role
         
+        import os
+        os.environ["SOLVENS_RBAC_BOOTSTRAP_TOKEN"] = "test-bootstrap-secret"
         rbac = RBAC()
-        team = rbac.create_team("Test Team")
-        user = rbac.create_user("test@example.com", team.id, Role.DEVELOPER)
+        team = rbac.create_team("Test Team", bootstrap_token="test-bootstrap-secret")
+        owner = rbac.create_user("owner@example.com", team.id, Role.OWNER, bootstrap_token="test-bootstrap-secret")
+        user = rbac.create_user("test@example.com", team.id, Role.DEVELOPER, actor_id=owner.id)
         
         api_key, raw_key = rbac.create_api_key(
             user_id=user.id,
             name="Test Key",
             scopes=["workflow:run", "provider:view"],
+            actor_id=user.id,
         )
         
         assert api_key is not None
