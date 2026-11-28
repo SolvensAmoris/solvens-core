@@ -36,15 +36,20 @@ class RBACTestTests(unittest.TestCase):
         self.assertIn(Permission.WORKFLOW_RUN, ROLE_PERMISSIONS[Role.EDITOR])
 
     def test_admin_cannot_cross_tenant_workflow_acl(self):
+        import os
+        os.environ["SOLVENS_RBAC_BOOTSTRAP_TOKEN"] = "test-bootstrap-secret"
         manager = RBACManager()
-        owner = manager.create_user("owner@example.test", "tenant-a", Role.OWNER)
-        manager.set_workflow_acl("foreign-workflow", "tenant-b", public=True)
+        owner = manager.create_user("owner@example.test", "tenant-a", Role.OWNER, bootstrap_token="test-bootstrap-secret")
+        manager.set_workflow_acl("foreign-workflow", "tenant-a", public=True, actor=owner)
         self.assertFalse(manager.can_run_workflow(owner, "foreign-workflow"))
 
     def test_user_cannot_forge_privileged_role(self):
         from security.rbac import User
+        import os
+        os.environ["SOLVENS_RBAC_BOOTSTRAP_TOKEN"] = "test-bootstrap-secret"
         manager = RBACManager()
-        developer = manager.create_user("dev@example.test", "tenant-a", Role.DEVELOPER)
+        owner = manager.create_user("owner@example.test", "tenant-a", Role.OWNER, bootstrap_token="test-bootstrap-secret")
+        developer = manager.create_user("dev@example.test", "tenant-a", Role.DEVELOPER, actor=owner)
         forged = User(id=developer.id, email=developer.email, team_id=developer.team_id, role=Role.OWNER)
         self.assertFalse(manager.can_run_workflow(forged, "any-workflow"))
 
