@@ -40,7 +40,8 @@ class RBACTestTests(unittest.TestCase):
         os.environ["SOLVENS_RBAC_BOOTSTRAP_TOKEN"] = "test-bootstrap-secret"
         manager = RBACManager()
         owner = manager.create_user("owner@example.test", "tenant-a", Role.OWNER, bootstrap_token="test-bootstrap-secret")
-        manager.set_workflow_acl("foreign-workflow", "tenant-a", public=True, actor=owner)
+        with self.assertRaises(PermissionError):
+            manager.set_workflow_acl("foreign-workflow", "tenant-b", public=True, actor=owner)
         self.assertFalse(manager.can_run_workflow(owner, "foreign-workflow"))
 
     def test_user_cannot_forge_privileged_role(self):
