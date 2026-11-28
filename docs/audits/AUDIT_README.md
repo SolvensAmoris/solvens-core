@@ -1,6 +1,8 @@
 # SOLVENS CORE - Auditoría Externa Completa
 
-**Fecha:** 2026-07-17  
+**Fecha:** 2026-07-17
+
+> Historical audit package. This report is retained as a dated artifact and is not a statement of current production readiness.  
 **Versión:** 0.5.0  
 **Autor:** Luis Alberto Burciaga Miker
 
@@ -20,7 +22,7 @@
 ### 3. Documentación
 - `docs/` - Arquitectura, migración
 - `cosmos/docs/LLAMA_AUDIT_SPEC.md` - Especificación LLaMA
-- `AUDIT_PACKAGE/` - Paquete de auditoría
+- `archive/audit-package-v0.4.5-rc1/AUDIT_PACKAGE/` - snapshot histórico del paquete de auditoría
 
 ---
 

@@ -95,6 +95,11 @@ docker-compose --profile ollama up
 
 ## Documentation
 
+- [Project notes and release checklist](docs/project/)
+- [Historical audit reports](docs/audits/)
+- [Examples and demos](examples/demos/)
+- [Archived audit snapshot](archive/audit-package-v0.4.5-rc1/)
+
 - [CLI Reference](docs/CLI.md)
 - [API Documentation](docs/API.md)
 - [Architecture](docs/ARCHITECTURE.md)

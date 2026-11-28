@@ -113,7 +113,7 @@ Ejecutar estos comandos para verificar:
 
 ```bash
 # Smoke Test
-python smoke_test.py
+python tests/smoke/smoke_test.py
 
 # Unit Tests
 python -m pytest tests/ -q
