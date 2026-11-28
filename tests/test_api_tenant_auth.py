@@ -33,6 +33,8 @@ def _test_principal(request: Request) -> Principal:
         return Principal("user-a", "tenant-a", frozenset({"developer"}), user_id="db-user-a")
     if token == "tenant-a-other-user":
         return Principal("other-user", "tenant-a", frozenset({"developer"}), user_id="db-user-other")
+    if token == "tenant-a-viewer":
+        return Principal("viewer-a", "tenant-a", frozenset({"viewer"}), user_id="db-user-a")
     if token == "tenant-b":
         return Principal("user-b", "tenant-b", frozenset({"developer"}), user_id="db-user-b")
     raise HTTPException(status_code=401, detail="Invalid test token")
@@ -136,6 +138,28 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
         self.assertEqual(foreign_tenant.status_code, 404)
         self.assertEqual(foreign_user.status_code, 404)
         self.assertEqual(own.status_code, 200)
+
+    def test_viewer_can_read_owned_run_but_cannot_start_execution(self):
+        created = self.client.post(
+            "/api/run",
+            headers={"Authorization": "Bearer tenant-a"},
+            json={"name": "role-gate-flow", "tasks": []},
+        )
+        self.assertEqual(created.status_code, 200)
+        run_id = created.json()["run_id"]
+        self._wait_for_completed(run_id)
+
+        read_response = self.client.get(
+            f"/api/run/{run_id}",
+            headers={"Authorization": "Bearer tenant-a-viewer"},
+        )
+        execute_response = self.client.post(
+            "/api/run",
+            headers={"Authorization": "Bearer tenant-a-viewer"},
+            json={"name": "viewer-forbidden", "tasks": []},
+        )
+        self.assertEqual(read_response.status_code, 200)
+        self.assertEqual(execute_response.status_code, 403)
 
     def test_run_survives_process_local_cache_loss(self):
         created = self.client.post(
