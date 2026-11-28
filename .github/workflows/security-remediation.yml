@@ -24,7 +24,7 @@ jobs:
       - name: Install project and test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,api]"
+          python -m pip install -e ".[dev,api,storage]"
       - name: Compile changed Python modules
         run: |
           python -m compileall -q security solvens cosmos tests
