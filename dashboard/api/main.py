@@ -450,6 +450,8 @@ async def _redis_stream_listener(redis_url: str) -> None:
                         )
                     except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
                         logger.warning("Skipping malformed dashboard stream event")
+    finally:
+        await redis.aclose()
 
 
 @asynccontextmanager
