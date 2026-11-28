@@ -1,30 +1,32 @@
 """API boundary tests for OIDC enforcement and tenant isolation."""
 import unittest
-from unittest.mock import patch
-
+from fastapi import Request
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from security.oidc import Principal
+from security.oidc import Principal, require_principal
 from dashboard.api import main as dashboard
 from solvens.api.main import app as core_api
+
+
+def _test_principal(request: Request) -> Principal:
+    token = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    if token == "tenant-a":
+        return Principal("user-a", "tenant-a", frozenset({"developer"}), user_id="db-user-a")
+    if token == "tenant-b":
+        return Principal("user-b", "tenant-b", frozenset({"developer"}), user_id="db-user-b")
+    from fastapi import HTTPException
+    raise HTTPException(status_code=401, detail="Invalid test token")
 
 
 class DashboardTenantBoundaryTests(unittest.TestCase):
     def setUp(self):
         dashboard.runs.clear()
         dashboard.ws_tickets.clear()
-
-        def resolve(token):
-            if token == "tenant-a":
-                return Principal("user-a", "tenant-a", frozenset({"developer"}))
-            if token == "tenant-b":
-                return Principal("user-b", "tenant-b", frozenset({"developer"}))
-            raise PermissionError("invalid token")
-
-        self.auth_patch = patch("security.oidc.verify_access_token", side_effect=resolve)
-        self.auth_patch.start()
-        self.addCleanup(self.auth_patch.stop)
+        dashboard.app.dependency_overrides[dashboard.require_principal] = _test_principal
+        core_api.dependency_overrides[require_principal] = _test_principal
+        self.addCleanup(dashboard.app.dependency_overrides.clear)
+        self.addCleanup(core_api.dependency_overrides.clear)
         self.client = TestClient(dashboard.app)
 
     def test_core_api_requires_auth_except_health(self):
