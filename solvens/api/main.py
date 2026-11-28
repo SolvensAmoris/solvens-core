@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import structlog
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
@@ -115,12 +116,19 @@ app = FastAPI(
 )
 
 # CORS middleware
+import os
+
+_cors_origins = [
+    origin.strip()
+    for origin in os.getenv("SOLVENS_CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 

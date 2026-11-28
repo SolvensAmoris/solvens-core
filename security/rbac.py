@@ -61,7 +61,10 @@ ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.PROVIDER_VIEW,
     },
     Role.EDITOR: {
-        *Role.DEVELOPER.permissions,
+        Permission.WORKFLOW_VIEW,
+        Permission.WORKFLOW_RUN,
+        Permission.WORKFLOW_SIMULATE,
+        Permission.PROVIDER_VIEW,
         Permission.WORKFLOW_CREATE,
         Permission.WORKFLOW_EDIT,
         Permission.PROVIDER_CONFIGURE,
@@ -72,14 +75,30 @@ ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.PROVIDER_VIEW,
     },
     Role.ADMIN: {
-        *Role.EDITOR.permissions,
+        Permission.WORKFLOW_VIEW,
+        Permission.WORKFLOW_RUN,
+        Permission.WORKFLOW_SIMULATE,
+        Permission.PROVIDER_VIEW,
+        Permission.WORKFLOW_CREATE,
+        Permission.WORKFLOW_EDIT,
+        Permission.PROVIDER_CONFIGURE,
         Permission.WORKFLOW_DELETE,
         Permission.USER_MANAGE,
         Permission.TEAM_MANAGE,
         Permission.SETTINGS_MANAGE,
     },
     Role.OWNER: {
-        *Role.ADMIN.permissions,
+        Permission.WORKFLOW_VIEW,
+        Permission.WORKFLOW_RUN,
+        Permission.WORKFLOW_SIMULATE,
+        Permission.PROVIDER_VIEW,
+        Permission.WORKFLOW_CREATE,
+        Permission.WORKFLOW_EDIT,
+        Permission.PROVIDER_CONFIGURE,
+        Permission.WORKFLOW_DELETE,
+        Permission.USER_MANAGE,
+        Permission.TEAM_MANAGE,
+        Permission.SETTINGS_MANAGE,
         Permission.AUDIT_VIEW,
     },
 }
@@ -249,30 +268,34 @@ class RBACManager:
     # Authorization
     def has_permission(self, user: User, permission: Permission) -> bool:
         """Check if user has a specific permission."""
-        if user.id not in self._users:
+        stored_user = self._users.get(user.id)
+        if stored_user is None or stored_user.team_id != user.team_id or stored_user.role != user.role:
             return False
-        return permission in ROLE_PERMISSIONS.get(user.role, set())
+        return permission in ROLE_PERMISSIONS.get(stored_user.role, set())
     
     def can_run_workflow(self, user: User, workflow_id: str) -> bool:
         """Check if user can run a specific workflow."""
-        # Owner/Admin can do anything
+        # Reject stale/foreign user objects before evaluating privileges.
+        stored_user = self._users.get(user.id)
+        if stored_user is None or stored_user.team_id != user.team_id or stored_user.role != user.role:
+            return False
+
+        # Tenant boundary applies to every role, including OWNER and ADMIN.
+        acl = self._workflow_acls.get(workflow_id)
+        if acl and acl.team_id != user.team_id:
+            return False
+
+        if acl and (user.id in acl.deny_users or user.team_id in acl.deny_users):
+            return False
+
+        # Privileged roles bypass allow-lists only inside their own tenant.
         if user.role in (Role.OWNER, Role.ADMIN):
             return True
-        
-        # Check workflow ACL
-        acl = self._workflow_acls.get(workflow_id)
-        if acl:
-            # Check deny list
-            if user.id in acl.deny_users or user.team_id in acl.deny_users:
+        if acl and not acl.public:
+            if user.id not in acl.allowed_users and user.team_id not in acl.allowed_teams:
                 return False
-            
-            # Check allow list
-            if not acl.public:
-                if user.id not in acl.allowed_users and user.team_id not in acl.allowed_teams:
-                    return False
-        
-        # Check user role
-        return Permission.WORKFLOW_RUN in ROLE_PERMISSIONS.get(user.role, set())
+
+        return Permission.WORKFLOW_RUN in ROLE_PERMISSIONS.get(stored_user.role, set())
     
     def scope_matches(self, scope_pattern: str, target: str) -> bool:
         """
@@ -352,4 +375,7 @@ class RBACManager:
     
     def _get_secret(self) -> str:
         import os
-        return os.getenv("SOLVENS_SECRET_KEY", "dev-secret-change-in-production")
+        secret = os.getenv("SOLVENS_SECRET_KEY")
+        if not secret:
+            raise RuntimeError("SOLVENS_SECRET_KEY must be configured; refusing insecure JWT fallback")
+        return secret

@@ -191,10 +191,18 @@ class AuditLogger:
             "timestamp": event.timestamp.isoformat(),
             "event_type": event.event_type,
             "actor_id": event.actor_id,
+            "actor_type": event.actor_type,
+            "team_id": event.team_id,
             "resource_type": event.resource_type,
             "resource_id": event.resource_id,
             "action": event.action,
             "success": event.success,
+            "error_message": event.error_message,
+            "ip_address": event.ip_address,
+            "user_agent": event.user_agent,
+            "input_hash": event.input_hash,
+            "output_hash": event.output_hash,
+            "metadata": event.metadata,
             "prev_hash": event.prev_hash,
         }
         return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
@@ -251,14 +259,20 @@ class AuditLogger:
             user_agent=user_agent,
             input_hash=hashlib.sha256(json.dumps(input_data).encode()).hexdigest() if input_data else None,
             output_hash=hashlib.sha256(json.dumps(output_data).encode()).hexdigest() if output_data else None,
-            prev_hash=self._last_hash,
+            prev_hash="",
             metadata=metadata or {},
         )
         
+        # Serialize writers and derive the chain tip inside the same transaction.
+        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn.execute("BEGIN IMMEDIATE")
+        tip = conn.execute(
+            "SELECT event_hash FROM audit_events ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        event.prev_hash = tip[0] if tip else "GENESIS"
         event.event_hash = self._compute_event_hash(event)
-        
+
         # Append-only insert
-        conn = sqlite3.connect(self.db_path)
         conn.execute(
             """
             INSERT INTO audit_events (
@@ -291,7 +305,7 @@ class AuditLogger:
         )
         conn.commit()
         conn.close()
-        
+
         self._last_hash = event.event_hash
         return event
     
@@ -304,7 +318,7 @@ class AuditLogger:
         """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.execute(
-            "SELECT * FROM audit_events ORDER BY timestamp ASC"
+            "SELECT * FROM audit_events ORDER BY rowid ASC"
         )
         rows = cursor.fetchall()
         conn.close()
@@ -313,8 +327,8 @@ class AuditLogger:
         expected_prev = "GENESIS"
         
         for row in rows:
-            event_hash = row[17]  # event_hash column
-            prev_hash = row[16]    # prev_hash column
+            prev_hash = row[15]    # prev_hash column
+            event_hash = row[16]  # event_hash column
             
             if prev_hash != expected_prev:
                 broken.append(f"Event {row[0]}: prev_hash mismatch")
@@ -331,8 +345,14 @@ class AuditLogger:
                 resource_id=row[7],
                 action=row[8],
                 success=bool(row[9]),
+                error_message=row[10],
+                ip_address=row[11],
+                user_agent=row[12],
+                input_hash=row[13],
+                output_hash=row[14],
                 prev_hash=prev_hash,
                 event_hash=event_hash,
+                metadata=json.loads(row[17]) if row[17] else {},
             )
             computed = self._compute_event_hash(event)
             if computed != event_hash:

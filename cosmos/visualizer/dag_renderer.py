@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Dict, Tuple, Optional, Any
 from pathlib import Path
+from html import escape
 
 
 class NodeType(Enum):
@@ -204,7 +205,7 @@ class DAGRenderer:
         ]
         
         # Título
-        title = graph.metadata.get("name", "Cosmos DAG")
+        title = escape(str(graph.metadata.get("name", "Cosmos DAG")))
         svg_lines.append(f'<text x="20" y="35" class="title">{title}</text>')
         svg_lines.append(f'<text x="20" y="52" class="subtitle">{len(graph.nodes)} nodes, {len(graph.edges)} edges</text>')
         
@@ -227,7 +228,7 @@ class DAGRenderer:
                     mid_x = (src.x + tgt.x) / 2
                     mid_y = (src.y + tgt.y) / 2 - 5
                     svg_lines.append(
-                        f'<text x="{mid_x}" y="{mid_y}" class="edge-label" text-anchor="middle">{edge.label}</text>'
+                        f'<text x="{mid_x}" y="{mid_y}" class="edge-label" text-anchor="middle">{escape(str(edge.label))}</text>'
                     )
         
         # Nodos
@@ -248,7 +249,7 @@ class DAGRenderer:
             
             # Label debajo
             svg_lines.append(
-                f'<text x="{node.x}" y="{node.y + self.node_radius + 15}" class="node-label" fill="#D1D5DB">{node.label}</text>'
+                f'<text x="{node.x}" y="{node.y + self.node_radius + 15}" class="node-label" fill="#D1D5DB">{escape(str(node.label))}</text>'
             )
         
         svg_lines.append('</svg>')
@@ -266,7 +267,7 @@ class DAGRenderer:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{graph.metadata.get("name", "Cosmos DAG")}</title>
+    <title>{escape(str(graph.metadata.get("name", "Cosmos DAG")))}</title>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{
@@ -352,7 +353,7 @@ class DAGRenderer:
 <body>
     <div class="container">
         <header>
-            <h1>🌌 {graph.metadata.get("name", "Cosmos DAG")}</h1>
+            <h1>🌌 {escape(str(graph.metadata.get("name", "Cosmos DAG")))}</h1>
             <p class="subtitle">Cosmos Language Visualization</p>
         </header>
         
