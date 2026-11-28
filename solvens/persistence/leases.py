@@ -31,6 +31,41 @@ async def claim_next_task(
         raise ValueError("lease_seconds must be between 1 and 3600")
 
     current = now or datetime.now(timezone.utc)
+
+    # Terminalize expired/cancel-requested records that can no longer be claimed.
+    terminal_candidates = (
+        await session.execute(
+            select(CoreTaskRecord)
+            .where(
+                or_(
+                    (CoreTaskRecord.status == "queued")
+                    & (CoreTaskRecord.attempt_count >= CoreTaskRecord.max_attempts),
+                    (CoreTaskRecord.status == "running")
+                    & (CoreTaskRecord.lease_expires_at.is_not(None))
+                    & (CoreTaskRecord.lease_expires_at <= current)
+                    & (CoreTaskRecord.attempt_count >= CoreTaskRecord.max_attempts),
+                    (CoreTaskRecord.status == "cancel_requested")
+                    & (CoreTaskRecord.lease_expires_at.is_not(None))
+                    & (CoreTaskRecord.lease_expires_at <= current),
+                )
+            )
+            .with_for_update(skip_locked=True)
+        )
+    ).scalars().all()
+    for exhausted in terminal_candidates:
+        if exhausted.status == "cancel_requested":
+            exhausted.status = "cancelled"
+            exhausted.error = exhausted.error or "Cancelled after worker lease expired"
+        else:
+            exhausted.status = "failed"
+            exhausted.error = exhausted.error or "Worker lease expired after maximum attempts"
+        exhausted.completed_at = current
+        exhausted.worker_id = None
+        exhausted.lease_expires_at = None
+        exhausted.heartbeat_at = None
+    if terminal_candidates:
+        await session.flush()
+
     eligible = or_(
         CoreTaskRecord.status == "queued",
         (
