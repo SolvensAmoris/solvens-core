@@ -109,34 +109,76 @@ class WSMessage:
 # ============================================================================
 
 class ConnectionManager:
-    """Manages WebSocket connections per run."""
+    """Manage owner-bound WebSockets and deduplicate snapshot sequence replay."""
 
     def __init__(self):
         self.active_connections: dict[str, list[WebSocket]] = {}
+        self.run_owners: dict[str, tuple[str, str]] = {}
+        self.last_sequence: dict[str, int] = {}
 
-    async def connect(self, websocket: WebSocket, run_id: str):
+    async def connect(
+        self,
+        websocket: WebSocket,
+        run_id: str,
+        *,
+        tenant_id: str,
+        user_id: str,
+        sequence: int,
+    ) -> None:
+        owner = (tenant_id, user_id)
+        existing_owner = self.run_owners.get(run_id)
+        if existing_owner is not None and existing_owner != owner:
+            raise PermissionError("WebSocket run owner mismatch")
         await websocket.accept()
-        if run_id not in self.active_connections:
-            self.active_connections[run_id] = []
-        self.active_connections[run_id].append(websocket)
+        self.run_owners[run_id] = owner
+        self.last_sequence[run_id] = max(self.last_sequence.get(run_id, 0), sequence)
+        self.active_connections.setdefault(run_id, []).append(websocket)
 
     def disconnect(self, websocket: WebSocket, run_id: str):
-        if run_id in self.active_connections:
-            self.active_connections[run_id].remove(websocket)
-            if not self.active_connections[run_id]:
-                del self.active_connections[run_id]
+        connections = self.active_connections.get(run_id)
+        if not connections:
+            return
+        if websocket in connections:
+            connections.remove(websocket)
+        if not connections:
+            self.active_connections.pop(run_id, None)
+            self.run_owners.pop(run_id, None)
+            self.last_sequence.pop(run_id, None)
 
     async def broadcast(self, run_id: str, message: WSMessage):
-        if run_id in self.active_connections:
-            disconnected = []
-            for connection in self.active_connections[run_id]:
-                try:
-                    await connection.send_text(message.to_json())
-                except:
-                    disconnected.append(connection)
-            for conn in disconnected:
-                self.disconnect(conn, run_id)
+        connections = self.active_connections.get(run_id)
+        if not connections:
+            return
+        disconnected = []
+        for connection in list(connections):
+            try:
+                await connection.send_text(message.to_json())
+            except Exception:
+                disconnected.append(connection)
+        for connection in disconnected:
+            self.disconnect(connection, run_id)
 
+    async def broadcast_snapshot(
+        self,
+        *,
+        run_id: str,
+        tenant_id: str,
+        sequence: int,
+        snapshot: dict,
+    ) -> None:
+        """Fan out only newer snapshots to authenticated sockets for this tenant."""
+        if not self.active_connections.get(run_id):
+            return
+        owner = self.run_owners.get(run_id)
+        if owner is None or owner[0] != tenant_id:
+            return
+        if sequence <= self.last_sequence.get(run_id, 0):
+            return
+        self.last_sequence[run_id] = sequence
+        await self.broadcast(
+            run_id,
+            WSMessage(type=WSMessageType.DAG_UPDATE, data=snapshot),
+        )
 
 manager = ConnectionManager()
 logger = logging.getLogger(__name__)
