@@ -256,8 +256,8 @@ class RBAC:
         self._users[user.id] = user
         self._audit(
             "user.create",
-            actor_id=user.id,
-            actor_type="user",
+            actor_id=actor_id or "bootstrap",
+            actor_type="user" if actor_id else "bootstrap",
             team_id=team_id,
             resource_type="user",
             resource_id=user.id,
@@ -354,6 +354,9 @@ class RBAC:
         if expires_days:
             expires_at = datetime.now(timezone.utc) + timedelta(days=expires_days)
         
+        effective_team = team_id or owner.team_id
+        if effective_team != owner.team_id:
+            raise PermissionDenied("API keys cannot be bound outside the owner tenant")
         api_key = APIKey(
             id=self._generate_id(),
             user_id=user_id,
@@ -361,7 +364,7 @@ class RBAC:
             key_hash=key_hash,
             key_prefix=key_prefix,
             scopes=set(scopes),
-            team_id=team_id,
+            team_id=effective_team,
             expires_at=expires_at,
         )
         
@@ -369,9 +372,9 @@ class RBAC:
         
         self._audit(
             "api_key.create",
-            actor_id=user_id,
+            actor_id=actor.id,
             actor_type="user",
-            team_id=team_id or "",
+            team_id=effective_team,
             resource_type="api_key",
             resource_id=api_key.id,
             success=True,
@@ -425,7 +428,7 @@ class RBAC:
     def check_permission(self, user: User, permission: Permission) -> bool:
         """Check if user has a specific permission."""
         stored = self._users.get(user.id)
-        if stored is None or not stored.is_active or (stored.team_id, stored.role) != (user.team_id, user.role):
+        if stored is None or not stored.is_active or (stored.email, stored.team_id, stored.role) != (user.email, user.team_id, user.role):
             return False
         return permission in ROLE_PERMISSIONS.get(stored.role, set())
     
@@ -446,7 +449,7 @@ class RBAC:
     def can_run_workflow(self, user: User, workflow_id: str) -> bool:
         """Check if user can execute a workflow."""
         stored = self._users.get(user.id)
-        if stored is None or not stored.is_active or (stored.team_id, stored.role) != (user.team_id, user.role):
+        if stored is None or not stored.is_active or (stored.email, stored.team_id, stored.role) != (user.email, user.team_id, user.role):
             return False
         acl = self._workflow_acls.get(workflow_id)
         if acl is None or acl.team_id != stored.team_id:
