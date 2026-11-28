@@ -1,6 +1,6 @@
 # OIDC authentication and tenant boundary
 
-SOLVENS APIs are OIDC resource servers. The identity provider authenticates users; SOLVENS validates access tokens and enforces application authorization. No local password store or vendor-specific login flow is introduced.
+SOLVENS APIs are OIDC resource servers. The identity provider authenticates users; SOLVENS validates access tokens and enforces application authorization. No local password store or vendor-specific login flow is introduced. These modules are resource-server validation, not a login UI or authorization-code callback. The browser dashboard must use the selected IdP SDK for Authorization Code + PKCE and send the resulting access token to these APIs.
 
 ## Required deployment configuration
 
