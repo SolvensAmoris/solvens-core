@@ -1,0 +1,35 @@
+name: Dashboard web build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dashboard/web/**"
+      - ".github/workflows/dashboard-build.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "dashboard/web/**"
+      - ".github/workflows/dashboard-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: dashboard/web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install --no-package-lock
+      - name: Build dashboard
+        run: npm run build
