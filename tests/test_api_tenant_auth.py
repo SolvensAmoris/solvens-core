@@ -13,6 +13,8 @@ def _test_principal(request: Request) -> Principal:
     token = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
     if token == "tenant-a":
         return Principal("user-a", "tenant-a", frozenset({"developer"}), user_id="db-user-a")
+    if token == "tenant-a-other-user":
+        return Principal("other-user", "tenant-a", frozenset({"developer"}), user_id="db-user-other")
     if token == "tenant-b":
         return Principal("user-b", "tenant-b", frozenset({"developer"}), user_id="db-user-b")
     from fastapi import HTTPException
@@ -89,6 +91,22 @@ class DashboardTenantBoundaryTests(unittest.TestCase):
             self.assertEqual(initial["type"], "dag_update")
 
         self.assertNotIn(ticket, dashboard.ws_tickets)
+
+    def test_websocket_ticket_cannot_cross_user_in_same_tenant(self):
+        created = self.client.post(
+            "/api/run",
+            headers={"Authorization": "Bearer tenant-a"},
+            json={"name": "private-user-run", "tasks": []},
+        )
+        run_id = created.json()["run_id"]
+        ticket_response = self.client.post(
+            "/api/auth/ws-ticket",
+            headers={"Authorization": "Bearer tenant-a-other-user"},
+        )
+        ticket = ticket_response.json()["ticket"]
+        with self.assertRaises(WebSocketDisconnect):
+            with self.client.websocket_connect(f"/ws/run/{run_id}?ticket={ticket}"):
+                pass
 
     def test_websocket_ticket_cannot_cross_tenant(self):
         created = self.client.post(
