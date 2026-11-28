@@ -465,7 +465,13 @@ async def dashboard_lifespan(app):
     if redis_url:
         from solvens.persistence.outbox import OutboxPublisher
 
-        publisher = OutboxPublisher(redis_url=redis_url)
+        publisher = OutboxPublisher(
+            redis_url=redis_url,
+            max_stream_length=max(
+                100, int(os.getenv("SOLVENS_OUTBOX_MAX_STREAM_LENGTH", "50000"))
+            ),
+            poll_interval=float(os.getenv("SOLVENS_OUTBOX_POLL_INTERVAL", "0.5")),
+        )
         background_tasks.append(
             asyncio.create_task(publisher.run(), name="dashboard-outbox-publisher")
         )
