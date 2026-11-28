@@ -87,7 +87,7 @@ class RBACAdversarialTests(unittest.TestCase):
     def test_token_validation_rejects_deleted_or_changed_identity(self):
         import os
         old = os.environ.get("SOLVENS_SECRET_KEY")
-        os.environ["SOLVENS_SECRET_KEY"] = "test-only-secret-long-enough"
+        os.environ["SOLVENS_SECRET_KEY"] = "test-only-secret-long-enough-with-32-bytes"
         try:
             token = self.manager.generate_token(self.user)
             self.manager._users[self.user.id].role = Role.VIEWER
