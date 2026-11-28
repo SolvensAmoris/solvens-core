@@ -143,6 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       if (response.status === 401) {
         setUser(null);
+        await getManager().removeUser();
       }
       if (!response.ok) {
         throw new Error(`API request failed (${response.status})`);
