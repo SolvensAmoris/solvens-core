@@ -96,8 +96,11 @@ async def test_outbox_publish_failure_leaves_event_unpublished():
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(
-    not os.getenv("SOLVENS_REDIS_URL"),
-    reason="Redis Streams integration requires SOLVENS_REDIS_URL",
+    not (
+        os.getenv("SOLVENS_REDIS_URL")
+        and (os.getenv("SOLVENS_DATABASE_URL") or os.getenv("DATABASE_URL"))
+    ),
+    reason="Redis Streams integration requires Redis and database URLs",
 )
 async def test_redis_stream_replays_published_outbox_event():
     from redis.asyncio import Redis
