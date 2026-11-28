@@ -6,6 +6,7 @@ FastAPI + WebSockets for real-time DAG visualization.
 
 import asyncio
 import hashlib
+from contextlib import asynccontextmanager
 import json
 import logging
 import time
